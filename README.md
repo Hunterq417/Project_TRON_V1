@@ -35,11 +35,22 @@ If TRON crashes, check `tron_error.log` next to the exe for a traceback.
 
 ## Orb HUD
 
-A centered particle window pops onto the screen the moment you talk to TRON
+A centered particle sphere pops onto the screen the moment you talk to TRON
 and disappears again once the conversation ends — TRON runs quietly in the
 tray the rest of the time. It uses the same color language as the tray icon
-(table below). Toggle it manually anytime from the tray menu's
+(table below), plus a real-time pulse driven by the actual loudness of
+TRON's voice as it speaks. Toggle it manually anytime from the tray menu's
 "Show/Hide Orb."
+
+The orb is centered on your primary monitor and tries to pin itself to the
+desktop layer — behind every application window, like a live wallpaper —
+using the same undocumented Windows trick apps like Wallpaper Engine use.
+This can fail on some Windows builds/configurations; when it does, the orb
+just falls back to being a normal (not-always-on-top) window instead of
+erroring. **This has been verified at the code level (unit tests + live
+Win32 API calls) but never visually confirmed rendering behind icons** — the
+environment this was built in couldn't composite a real desktop session to
+check. Look at it on your own machine before relying on it.
 
 ## Tray icon / orb status colors
 

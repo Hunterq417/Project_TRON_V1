@@ -49,22 +49,30 @@ xcopy vendor dist\vendor\ /E /I
 4. Confirm `config.json` appears next to `TRON.exe` (not anywhere else) and
    the tray icon appears (white/idle).
 5. Press the configured hotkey and confirm TRON responds. Confirm the orb
-   window appears centered on screen, spinning slowly and changing color
-   with TRON's state, and disappears again once the conversation ends.
+   appears centered on your primary monitor, changing color with TRON's
+   state and pulsing with the actual loudness of its voice while it talks,
+   and disappears again once the conversation ends.
 6. From the tray menu, click "Show/Hide Orb" and confirm it toggles the orb
    on and off manually.
-7. Close TRON, relaunch `TRON.exe` — it should go straight to the tray icon,
+7. **Desktop-pinning (never visually verified during development — check
+   this first):** while TRON is speaking, alt-tab to or click into another
+   application window over where the orb is. It should end up hidden behind
+   that window, not floating on top of it. If it stays on top instead, the
+   WorkerW trick (`desktop_layer.py`) failed silently on your Windows
+   build/configuration and the orb fell back to being a normal window —
+   not a bug exactly, but worth knowing which mode you're actually in.
+8. Close TRON, relaunch `TRON.exe` — it should go straight to the tray icon,
    no setup window this time.
-8. Check `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` in
+9. Check `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` in
    `regedit` for a `TRON` value pointing at the exe's path, if autostart was
    left checked.
-9. To test crash logging: temporarily rename `persona.txt` so startup fails,
-   relaunch, and confirm `tron_error.log` appears next to the exe with a
-   readable traceback. Restore `persona.txt` afterward.
-10. Enable "camera access"/"screen reading" in setup and confirm asking TRON
+10. To test crash logging: temporarily rename `persona.txt` so startup fails,
+    relaunch, and confirm `tron_error.log` appears next to the exe with a
+    readable traceback. Restore `persona.txt` afterward.
+11. Enable "camera access"/"screen reading" in setup and confirm asking TRON
     to look at your screen or through the camera works, and that it says
     something like "let me take a look, sir" first. With both left
     unchecked, confirm TRON explains it doesn't have that capability rather
     than silently failing.
-11. Ask TRON to run a malware scan, confirm it responds immediately (not a
+12. Ask TRON to run a malware scan, confirm it responds immediately (not a
     multi-minute wait), then later ask whether the scan finished.
