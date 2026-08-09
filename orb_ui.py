@@ -10,6 +10,12 @@ import desktop_layer
 _ORB_WIDTH = 400
 _ORB_HEIGHT = 400
 
+# Must exactly match orb.html's <body> background color — this is the color
+# Windows treats as "the hole" for real transparency (see desktop_layer.py's
+# apply_chroma_key_transparency). An off-white/off-magenta value deliberately
+# unlikely to ever appear in the orb's own white/blue/state-colored rendering.
+_CHROMA_KEY_RGB = 0xFF00FE
+
 
 def _centered_position(width: int, height: int) -> tuple[int, int]:
     """Centers on the primary monitor specifically (GetSystemMetrics(SM_CXSCREEN/
@@ -56,7 +62,7 @@ class OrbUI:
         from the main thread, once everything else is constructed. on_ready runs
         once the GUI loop has started (used for the things that don't need the
         native window itself, like starting the wake trigger and tray icon)."""
-        threading.Thread(target=self._pin_to_desktop_when_ready, daemon=True).start()
+        threading.Thread(target=self._apply_native_fixes_when_ready, daemon=True).start()
         webview.start(func=on_ready)
 
     def quit(self) -> None:
@@ -93,11 +99,16 @@ class OrbUI:
             self._window.hide()
             self._visible = False
 
-    def _pin_to_desktop_when_ready(self) -> None:
+    def _apply_native_fixes_when_ready(self) -> None:
+        """Two post-creation Win32 tweaks pywebview can't do on its own — real
+        transparency (its transparent=True is a known no-op on Windows) and
+        pinning behind other windows. Both are best-effort: if either fails,
+        the orb just looks/behaves like an ordinary window instead of crashing."""
         if not self._window.events.shown.wait(15):
             return
         try:
             hwnd = int(self._window.native.Handle.ToInt64())
         except Exception:
             return
+        desktop_layer.apply_chroma_key_transparency(hwnd, _CHROMA_KEY_RGB)
         desktop_layer.pin_to_desktop(hwnd)

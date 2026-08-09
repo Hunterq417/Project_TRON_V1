@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <style>
-  html, body { margin:0; padding:0; background: transparent; overflow: hidden; }
+  /* #ff00fe is a chroma key, not a design color — must exactly match orb_ui.py's
+     _CHROMA_KEY_RGB. pywebview's transparent=True is a no-op on Windows (it only
+     makes the browser control alpha-aware against its own opaque window), so real
+     transparency is done at the Win32 level: Windows punches out every pixel that
+     matches this exact color. Whatever is drawn (the canvas, alpha=0 where empty)
+     shows through everywhere else. */
+  html, body { margin:0; padding:0; background: #ff00fe; overflow: hidden; }
   canvas { display:block; }
 </style>
 </head>
@@ -122,8 +128,8 @@ function buildParticles(count, { shell, size, brightnessMin, brightnessMax }) {
   return { points, colors, phases, baseBrightness };
 }
 
-const shellSystem = buildParticles(3200, { shell: true, size: 0.024, brightnessMin: 0.55, brightnessMax: 1.0 });
-const starSystem = buildParticles(500, { shell: false, size: 0.016, brightnessMin: 0.25, brightnessMax: 0.7 });
+const shellSystem = buildParticles(3200, { shell: true, size: 0.024, brightnessMin: 0.75, brightnessMax: 1.0 });
+const starSystem = buildParticles(500, { shell: false, size: 0.016, brightnessMin: 0.45, brightnessMax: 0.85 });
 
 const sphereGroup = new THREE.Group();
 sphereGroup.add(shellSystem.points, starSystem.points);
@@ -133,7 +139,9 @@ function twinkle(system, t, speedMul) {
   const { colors, phases, baseBrightness, points } = system;
   const count = baseBrightness.length;
   for (let i = 0; i < count; i++) {
-    const flicker = 0.75 + 0.25 * Math.sin(t * 1.6 * speedMul + phases[i]);
+    // Floor raised from 0.75 to 0.88 — still shimmers, but never dims far
+    // enough to hurt visibility (that was the actual complaint).
+    const flicker = 0.88 + 0.12 * Math.sin(t * 1.6 * speedMul + phases[i]);
     const b = baseBrightness[i] * flicker;
     colors[i * 3 + 0] = b * 0.86;
     colors[i * 3 + 1] = b * 0.93;

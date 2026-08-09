@@ -108,3 +108,41 @@ def test_pin_to_desktop_returns_false_when_set_parent_fails(monkeypatch):
     result = desktop_layer.pin_to_desktop(12345)
 
     assert result is False
+
+
+def test_apply_chroma_key_transparency_sets_layered_style_and_color_key(monkeypatch):
+    fake_user32 = MagicMock()
+    fake_user32.GetWindowLongW.return_value = 0x00000000
+    fake_user32.SetLayeredWindowAttributes.return_value = 1
+    monkeypatch.setattr(desktop_layer, "user32", fake_user32)
+
+    result = desktop_layer.apply_chroma_key_transparency(12345, 0xFF00FE)
+
+    # WS_EX_LAYERED must be OR'd onto whatever extended style already existed.
+    fake_user32.SetWindowLongW.assert_called_once_with(12345, -20, 0x00080000)
+
+    # COLORREF is 0x00bbggrr — 0xFF00FE (r=FF,g=00,b=FE) becomes 0xFE00FF.
+    fake_user32.SetLayeredWindowAttributes.assert_called_once_with(12345, 0xFE00FF, 0, 0x00000001)
+    assert result is True
+
+
+def test_apply_chroma_key_transparency_preserves_existing_extended_style(monkeypatch):
+    fake_user32 = MagicMock()
+    fake_user32.GetWindowLongW.return_value = 0x00000008  # WS_EX_TOPMOST, e.g.
+    fake_user32.SetLayeredWindowAttributes.return_value = 1
+    monkeypatch.setattr(desktop_layer, "user32", fake_user32)
+
+    desktop_layer.apply_chroma_key_transparency(12345, 0xFF00FE)
+
+    fake_user32.SetWindowLongW.assert_called_once_with(12345, -20, 0x00080008)
+
+
+def test_apply_chroma_key_transparency_returns_false_on_failure(monkeypatch):
+    fake_user32 = MagicMock()
+    fake_user32.GetWindowLongW.return_value = 0
+    fake_user32.SetLayeredWindowAttributes.return_value = 0
+    monkeypatch.setattr(desktop_layer, "user32", fake_user32)
+
+    result = desktop_layer.apply_chroma_key_transparency(12345, 0xFF00FE)
+
+    assert result is False

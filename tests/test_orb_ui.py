@@ -174,7 +174,7 @@ def test_run_starts_webview_on_the_calling_thread_with_on_ready(monkeypatch):
     monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
     fake_start = MagicMock()
     monkeypatch.setattr(orb_ui.webview, "start", fake_start)
-    monkeypatch.setattr(orb_ui.OrbUI, "_pin_to_desktop_when_ready", lambda self: None)
+    monkeypatch.setattr(orb_ui.OrbUI, "_apply_native_fixes_when_ready", lambda self: None)
 
     ui = orb_ui.OrbUI()
     on_ready = MagicMock()
@@ -183,7 +183,7 @@ def test_run_starts_webview_on_the_calling_thread_with_on_ready(monkeypatch):
     fake_start.assert_called_once_with(func=on_ready)
 
 
-def test_run_spawns_a_daemon_thread_for_desktop_pinning(monkeypatch):
+def test_run_spawns_a_daemon_thread_for_native_fixes(monkeypatch):
     fake_window = MagicMock()
     monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
     monkeypatch.setattr(orb_ui.webview, "start", MagicMock())
@@ -203,47 +203,56 @@ def test_run_spawns_a_daemon_thread_for_desktop_pinning(monkeypatch):
     ui = orb_ui.OrbUI()
     ui.run(MagicMock())
 
-    assert captured["target"] == ui._pin_to_desktop_when_ready
+    assert captured["target"] == ui._apply_native_fixes_when_ready
     assert captured["daemon"] is True
     assert captured["started"] is True
 
 
-def test_pin_to_desktop_when_ready_gives_up_if_never_shown(monkeypatch):
+def test_apply_native_fixes_when_ready_gives_up_if_never_shown(monkeypatch):
     fake_window = MagicMock()
     fake_window.events.shown.wait.return_value = False
     monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
     fake_pin = MagicMock()
+    fake_chroma = MagicMock()
     monkeypatch.setattr(orb_ui.desktop_layer, "pin_to_desktop", fake_pin)
+    monkeypatch.setattr(orb_ui.desktop_layer, "apply_chroma_key_transparency", fake_chroma)
 
     ui = orb_ui.OrbUI()
-    ui._pin_to_desktop_when_ready()
+    ui._apply_native_fixes_when_ready()
 
     fake_pin.assert_not_called()
+    fake_chroma.assert_not_called()
 
 
-def test_pin_to_desktop_when_ready_pins_using_the_native_handle(monkeypatch):
+def test_apply_native_fixes_when_ready_applies_transparency_then_pins(monkeypatch):
     fake_window = MagicMock()
     fake_window.events.shown.wait.return_value = True
     fake_window.native.Handle.ToInt64.return_value = 999888
     monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
     fake_pin = MagicMock()
+    fake_chroma = MagicMock()
     monkeypatch.setattr(orb_ui.desktop_layer, "pin_to_desktop", fake_pin)
+    monkeypatch.setattr(orb_ui.desktop_layer, "apply_chroma_key_transparency", fake_chroma)
 
     ui = orb_ui.OrbUI()
-    ui._pin_to_desktop_when_ready()
+    ui._apply_native_fixes_when_ready()
 
+    fake_chroma.assert_called_once_with(999888, orb_ui._CHROMA_KEY_RGB)
     fake_pin.assert_called_once_with(999888)
 
 
-def test_pin_to_desktop_when_ready_swallows_errors_reading_the_handle(monkeypatch):
+def test_apply_native_fixes_when_ready_swallows_errors_reading_the_handle(monkeypatch):
     fake_window = MagicMock()
     fake_window.events.shown.wait.return_value = True
     fake_window.native = None  # .Handle access would raise AttributeError
     monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
     fake_pin = MagicMock()
+    fake_chroma = MagicMock()
     monkeypatch.setattr(orb_ui.desktop_layer, "pin_to_desktop", fake_pin)
+    monkeypatch.setattr(orb_ui.desktop_layer, "apply_chroma_key_transparency", fake_chroma)
 
     ui = orb_ui.OrbUI()
-    ui._pin_to_desktop_when_ready()  # must not raise
+    ui._apply_native_fixes_when_ready()  # must not raise
 
     fake_pin.assert_not_called()
+    fake_chroma.assert_not_called()

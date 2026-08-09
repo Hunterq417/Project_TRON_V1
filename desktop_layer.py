@@ -1,11 +1,13 @@
 # desktop_layer.py
 """
-Reparents a window behind every application window, at the same z-level as
-desktop icons — the trick "live wallpaper" apps like Wallpaper Engine use.
-Undocumented Windows behavior (the 0x052C message to Progman isn't part of
-the public Win32 API), so this can silently fail on some Windows builds —
-callers should treat a False return as "stayed a normal window" and move on,
-not as a fatal error.
+Raw Win32 window manipulation for making the orb behave like a desktop
+overlay rather than a normal window: pin_to_desktop() reparents it behind
+every application window (the trick "live wallpaper" apps like Wallpaper
+Engine use — undocumented, can silently fail on some Windows builds), and
+apply_chroma_key_transparency() gives it a genuinely see-through background
+(pywebview's transparent=True is a known-incomplete no-op on Windows — see
+that function's docstring). Both degrade quietly (return False) rather than
+raising when the underlying trick doesn't work on a given machine.
 """
 import ctypes
 from ctypes import wintypes
@@ -31,7 +33,21 @@ EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPAR
 user32.EnumWindows.argtypes = [EnumWindowsProc, wintypes.LPARAM]
 user32.EnumWindows.restype = wintypes.BOOL
 
+user32.GetWindowLongW.restype = ctypes.c_long
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+
+user32.SetWindowLongW.restype = ctypes.c_long
+user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+
+user32.SetLayeredWindowAttributes.restype = wintypes.BOOL
+user32.SetLayeredWindowAttributes.argtypes = [
+    wintypes.HWND, wintypes.DWORD, ctypes.c_ubyte, wintypes.DWORD,
+]
+
 _SPAWN_WORKERW = 0x052C
+_GWL_EXSTYLE = -20
+_WS_EX_LAYERED = 0x00080000
+_LWA_COLORKEY = 0x00000001
 
 
 def _find_worker_w():
@@ -72,3 +88,21 @@ def pin_to_desktop(hwnd: int) -> bool:
     if not worker_w:
         return False
     return bool(user32.SetParent(wintypes.HWND(hwnd), worker_w))
+
+
+def apply_chroma_key_transparency(hwnd: int, key_color_rgb: int) -> bool:
+    """Makes every pixel of hwnd matching key_color_rgb (0xRRGGBB) fully
+    transparent, via a Win32 layered-window color key. This is the actual fix
+    for pywebview's transparent=True on Windows — that flag only makes the
+    browser control alpha-aware against its own Form, which stays opaque (see
+    module docstring's sibling problem), so the window renders as a solid
+    gray/white box instead of showing the desktop through it. The caller's
+    page must paint its background exactly key_color_rgb — not literally
+    "transparent" — for this to have anything to key against (see orb.html)."""
+    style = user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
+    user32.SetWindowLongW(hwnd, _GWL_EXSTYLE, style | _WS_EX_LAYERED)
+    r = (key_color_rgb >> 16) & 0xFF
+    g = (key_color_rgb >> 8) & 0xFF
+    b = key_color_rgb & 0xFF
+    colorref = (b << 16) | (g << 8) | r
+    return bool(user32.SetLayeredWindowAttributes(hwnd, colorref, 0, _LWA_COLORKEY))
