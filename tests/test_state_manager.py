@@ -1,6 +1,7 @@
 # tests/test_state_manager.py
 from unittest.mock import MagicMock
 
+import memory
 import state_manager as sm
 
 
@@ -128,7 +129,7 @@ def test_failed_session_sets_error_state_and_stays_retriggerable():
     assert attempts["n"] == 2
 
 
-def test_tool_call_event_dispatches_and_sends_response(monkeypatch):
+def test_tool_call_event_dispatches_sends_response_and_logs_activity(monkeypatch):
     import tools
 
     audio = FakeAudio()
@@ -137,6 +138,8 @@ def test_tool_call_event_dispatches_and_sends_response(monkeypatch):
 
     fake_tool = MagicMock(return_value='opened "notepad"')
     monkeypatch.setitem(tools.TOOL_DISPATCH, "open_target", fake_tool)
+    logged = []
+    monkeypatch.setattr(memory, "log_activity", lambda entry: logged.append(entry))
 
     session = FakeSession(events=[
         {"type": "tool_call", "calls": [{"id": "call-1", "name": "open_target", "args": {"name": "notepad"}}]},
@@ -157,5 +160,30 @@ def test_tool_call_event_dispatches_and_sends_response(monkeypatch):
 
     fake_tool.assert_called_once_with({"name": "notepad"}, fake_cfg)
     assert session.sent_tool_responses == [("call-1", "open_target", 'opened "notepad"')]
+    assert logged == [{"tool": "open_target", "args": {"name": "notepad"}, "result": 'opened "notepad"'}]
     assert sm.State.ACTING in states
     assert machine.state is sm.State.IDLE
+
+
+def test_default_session_factory_injects_recent_activity_context(monkeypatch):
+    monkeypatch.setattr(
+        memory, "recent_context", lambda n=10: "Recent activity (most recent last):\n- did stuff"
+    )
+
+    captured = {}
+
+    class FakeGeminiLiveSession:
+        def __init__(self, api_key, model_name, voice_name, system_instruction, tools=None):
+            captured["system_instruction"] = system_instruction
+
+    monkeypatch.setattr(sm, "GeminiLiveSession", FakeGeminiLiveSession)
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+    )
+
+    machine._session_factory()
+
+    assert "be TRON" in captured["system_instruction"]
+    assert "did stuff" in captured["system_instruction"]

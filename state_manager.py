@@ -3,6 +3,7 @@ import asyncio
 import time
 from enum import Enum, auto
 
+import memory
 import tools
 from audio_io import DuplexAudio, SAMPLE_RATE_IN
 from gemini_live_client import GeminiLiveSession
@@ -44,7 +45,8 @@ class TronStateMachine:
         self._cfg = cfg
         self._session_factory = session_factory or (
             lambda: GeminiLiveSession(
-                self._api_key, self._model_name, self._voice_name, self._persona_text,
+                self._api_key, self._model_name, self._voice_name,
+                self._persona_text + "\n\n" + memory.recent_context(),
                 tools=tools.TOOL_DECLARATIONS,
             )
         )
@@ -98,6 +100,9 @@ class TronStateMachine:
                             for call in event["calls"]:
                                 handler = tools.TOOL_DISPATCH[call["name"]]
                                 result = handler(call["args"], self._cfg)
+                                memory.log_activity({
+                                    "tool": call["name"], "args": call["args"], "result": result
+                                })
                                 await session.send_tool_response(call["id"], call["name"], result)
                             touch()
                         elif event["type"] == "turn_complete":
