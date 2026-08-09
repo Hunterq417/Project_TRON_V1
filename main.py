@@ -5,6 +5,7 @@ import traceback
 
 import config as config_module
 import setup_wizard
+from orb_ui import OrbUI
 from state_manager import TronStateMachine
 from wake_trigger import HotkeyTrigger
 from tray_ui import TrayUI
@@ -24,7 +25,15 @@ def main() -> None:
             "extend wake_trigger.py with an OpenWakeWordTrigger."
         )
 
-    tray = TrayUI(quit_callback=lambda: _quit(trigger, tray))
+    orb = OrbUI()
+    tray = TrayUI(
+        quit_callback=lambda: _quit(trigger, tray),
+        toggle_orb_callback=orb.toggle_visibility,
+    )
+
+    def on_state_change(state) -> None:
+        tray.on_state_change(state)
+        orb.on_state_change(state)
 
     machine = TronStateMachine(
         api_key=cfg.gemini_api_key,
@@ -32,13 +41,14 @@ def main() -> None:
         voice_name=cfg.voice_name,
         persona_text=persona_text,
         silence_timeout_s=cfg.silence_timeout_s,
-        on_state_change=tray.on_state_change,
+        on_state_change=on_state_change,
         cfg=cfg,
     )
 
     trigger = HotkeyTrigger(cfg.hotkey, on_trigger=machine.trigger)
     trigger.start()
     tray.start()
+    orb.start()
 
     print(f'TRON is running. Press {cfg.hotkey} to talk. Quit from the tray icon menu.')
     try:

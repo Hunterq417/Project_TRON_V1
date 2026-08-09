@@ -1,7 +1,7 @@
 # TRON
 
-A personal voice assistant. Sub-project 3/6 (Packaging/Shell) of the larger
-TRON program — see `docs/superpowers/specs/` for the full design and roadmap.
+A personal voice assistant. Sub-project 5/6 (3D UI) of the larger TRON
+program — see `docs/superpowers/specs/` for the full design and roadmap.
 
 ## Running from source (development)
 
@@ -29,7 +29,15 @@ after that goes straight to the tray icon.
 
 If TRON crashes, check `tron_error.log` next to the exe for a traceback.
 
-## Tray icon status colors
+## Orb HUD
+
+A centered, particle-sphere window pops onto the screen the moment you talk
+to TRON and disappears again once the conversation ends — TRON runs quietly
+in the tray the rest of the time. It uses the same color language as the
+tray icon (table below). Toggle it manually anytime from the tray menu's
+"Show/Hide Orb."
+
+## Tray icon / orb status colors
 
 | Color | State | Meaning |
 |---|---|---|
@@ -46,6 +54,7 @@ If TRON crashes, check `tron_error.log` next to the exe for a traceback.
 - Control media playback: play/pause, next/previous track, seek forward/backward (best-effort, up to about a minute)
 - Search the web
 - Draft and — after you confirm out loud — send email
+- Remember recent activity across conversations, recite it ("what have you been up to") or clear it on request
 
 ## Tests
 
