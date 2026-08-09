@@ -4,6 +4,7 @@ import time
 from enum import Enum, auto
 
 import memory
+import perception
 import tools
 from audio_io import DuplexAudio, SAMPLE_RATE_IN
 from gemini_live_client import GeminiLiveSession
@@ -47,13 +48,24 @@ class TronStateMachine:
             lambda: GeminiLiveSession(
                 self._api_key, self._model_name, self._voice_name,
                 self._persona_text + "\n\n" + memory.recent_context(),
-                tools=tools.TOOL_DECLARATIONS,
+                tools=tools.declarations_for(self._cfg),
             )
         )
 
     def _set_state(self, state: State) -> None:
         self.state = state
         self._on_state_change(state)
+
+    async def _handle_vision_tool(self, name: str, session) -> str:
+        try:
+            frame = (
+                perception.capture_screen_jpeg() if name == "look_at_screen"
+                else perception.capture_camera_jpeg()
+            )
+        except Exception as exc:
+            return f"couldn't capture that, sir: {exc}"
+        await session.send_video_frame(frame)
+        return "here's what I see, sir"
 
     def trigger(self) -> None:
         """Called by the trigger (hotkey today, wake-word later). Starts a conversation
@@ -98,8 +110,11 @@ class TronStateMachine:
                         elif event["type"] == "tool_call":
                             self._set_state(State.ACTING)
                             for call in event["calls"]:
-                                handler = tools.TOOL_DISPATCH[call["name"]]
-                                result = handler(call["args"], self._cfg)
+                                if call["name"] in tools.VISION_TOOL_NAMES:
+                                    result = await self._handle_vision_tool(call["name"], session)
+                                else:
+                                    handler = tools.TOOL_DISPATCH[call["name"]]
+                                    result = handler(call["args"], self._cfg)
                                 memory.log_activity({
                                     "tool": call["name"], "args": call["args"], "result": result
                                 })

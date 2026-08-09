@@ -2,6 +2,7 @@
 from unittest.mock import MagicMock
 
 import memory
+import perception
 import state_manager as sm
 
 
@@ -30,6 +31,7 @@ class FakeSession:
 
     def __init__(self, events=None):
         self.sent_audio = []
+        self.sent_video = []
         self.sent_tool_responses = []
         self._events = events if events is not None else [
             {"type": "audio", "data": b"reply-audio"},
@@ -44,6 +46,9 @@ class FakeSession:
 
     async def send_audio_chunk(self, pcm_bytes, sample_rate=16000):
         self.sent_audio.append(pcm_bytes)
+
+    async def send_video_frame(self, jpeg_bytes):
+        self.sent_video.append(jpeg_bytes)
 
     async def send_tool_response(self, call_id, name, result):
         self.sent_tool_responses.append((call_id, name, result))
@@ -187,3 +192,87 @@ def test_default_session_factory_injects_recent_activity_context(monkeypatch):
 
     assert "be TRON" in captured["system_instruction"]
     assert "did stuff" in captured["system_instruction"]
+
+
+def test_look_at_screen_sends_video_frame_and_acks(monkeypatch):
+    audio = FakeAudio()
+    audio._mic_chunks = []
+    states = []
+
+    fake_frame = b"\xff\xd8fake-jpeg"
+    monkeypatch.setattr(perception, "capture_screen_jpeg", lambda: fake_frame)
+    logged = []
+    monkeypatch.setattr(memory, "log_activity", lambda entry: logged.append(entry))
+
+    session = FakeSession(events=[
+        {"type": "tool_call", "calls": [{"id": "call-1", "name": "look_at_screen", "args": {}}]},
+        {"type": "turn_complete"},
+    ])
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        on_state_change=states.append,
+        audio=audio,
+        session_factory=lambda: session,
+        cfg=MagicMock(screen_enabled=True, camera_enabled=False),
+    )
+
+    machine.trigger()
+
+    assert session.sent_video == [fake_frame]
+    assert session.sent_tool_responses == [("call-1", "look_at_screen", "here's what I see, sir")]
+    assert logged[0]["tool"] == "look_at_screen"
+    assert sm.State.ACTING in states
+
+
+def test_look_via_camera_capture_failure_returns_apology(monkeypatch):
+    audio = FakeAudio()
+    audio._mic_chunks = []
+    states = []
+
+    def raise_error():
+        raise RuntimeError("no camera")
+    monkeypatch.setattr(perception, "capture_camera_jpeg", raise_error)
+
+    session = FakeSession(events=[
+        {"type": "tool_call", "calls": [{"id": "call-1", "name": "look_via_camera", "args": {}}]},
+        {"type": "turn_complete"},
+    ])
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        on_state_change=states.append,
+        audio=audio,
+        session_factory=lambda: session,
+        cfg=MagicMock(camera_enabled=True, screen_enabled=False),
+    )
+
+    machine.trigger()
+
+    assert session.sent_video == []
+    assert "couldn't capture" in session.sent_tool_responses[0][2]
+
+
+def test_default_session_factory_uses_declarations_for_cfg(monkeypatch):
+    captured = {}
+
+    class FakeGeminiLiveSession:
+        def __init__(self, api_key, model_name, voice_name, system_instruction, tools=None):
+            captured["tools"] = tools
+
+    monkeypatch.setattr(sm, "GeminiLiveSession", FakeGeminiLiveSession)
+    monkeypatch.setattr(memory, "recent_context", lambda n=10: "")
+
+    fake_cfg = MagicMock(screen_enabled=True, camera_enabled=False)
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1, cfg=fake_cfg,
+    )
+
+    machine._session_factory()
+
+    names = {d["name"] for d in captured["tools"]}
+    assert "look_at_screen" in names
+    assert "look_via_camera" not in names
