@@ -173,3 +173,33 @@ def test_check_scan_status_delegates(monkeypatch):
 
     fake_check.assert_called_once_with({}, None)
     assert result == "no scan has been run yet, sir"
+
+
+def test_shutdown_pc_delegates(monkeypatch):
+    fake_shutdown = MagicMock(return_value="shutting down in 30 seconds, sir")
+    monkeypatch.setattr(tools.system_control, "shutdown_pc", fake_shutdown)
+
+    result = tools.TOOL_DISPATCH["shutdown_pc"]({}, None)
+
+    fake_shutdown.assert_called_once_with({}, None)
+    assert result == "shutting down in 30 seconds, sir"
+
+
+def test_restart_pc_delegates(monkeypatch):
+    fake_restart = MagicMock(return_value="restarting in 30 seconds, sir")
+    monkeypatch.setattr(tools.system_control, "restart_pc", fake_restart)
+
+    result = tools.TOOL_DISPATCH["restart_pc"]({}, None)
+
+    fake_restart.assert_called_once_with({}, None)
+    assert result == "restarting in 30 seconds, sir"
+
+
+def test_cancel_shutdown_delegates(monkeypatch):
+    fake_cancel = MagicMock(return_value="cancelled, sir")
+    monkeypatch.setattr(tools.system_control, "cancel_shutdown", fake_cancel)
+
+    result = tools.TOOL_DISPATCH["cancel_shutdown"]({}, None)
+
+    fake_cancel.assert_called_once_with({}, None)
+    assert result == "cancelled, sir"

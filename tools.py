@@ -7,6 +7,7 @@ import email_client
 import media_control
 import memory
 import security_scan
+import system_control
 
 _APP_INDEX_CACHE = None
 
@@ -84,6 +85,18 @@ def _check_scan_status(args, cfg):
     return security_scan.check_scan_status(args, cfg)
 
 
+def _shutdown_pc(args, cfg):
+    return system_control.shutdown_pc(args, cfg)
+
+
+def _restart_pc(args, cfg):
+    return system_control.restart_pc(args, cfg)
+
+
+def _cancel_shutdown(args, cfg):
+    return system_control.cancel_shutdown(args, cfg)
+
+
 TOOL_DISPATCH = {
     "open_target": _open_target,
     "web_search": _web_search,
@@ -97,6 +110,9 @@ TOOL_DISPATCH = {
     "forget_recent_activity": _forget_recent_activity,
     "scan_for_malware": _scan_for_malware,
     "check_scan_status": _check_scan_status,
+    "shutdown_pc": _shutdown_pc,
+    "restart_pc": _restart_pc,
+    "cancel_shutdown": _cancel_shutdown,
 }
 
 TOOL_DECLARATIONS = [
@@ -210,6 +226,27 @@ TOOL_DECLARATIONS = [
     {
         "name": "check_scan_status",
         "description": "Check whether the most recent malware scan has finished and what it found.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "shutdown_pc",
+        "description": (
+            "Shut down the computer after a short delay. ALWAYS ask the user to confirm "
+            "out loud first — never call this on an ambiguous, overheard, or unconfirmed request."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "restart_pc",
+        "description": (
+            "Restart the computer after a short delay. ALWAYS ask the user to confirm "
+            "out loud first — never call this on an ambiguous, overheard, or unconfirmed request."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancel_shutdown",
+        "description": "Cancel a pending shutdown or restart previously scheduled by shutdown_pc or restart_pc.",
         "parameters": {"type": "object", "properties": {}},
     },
 ]
