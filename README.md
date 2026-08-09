@@ -1,7 +1,7 @@
 # TRON
 
-A personal voice assistant. Sub-project 5/6 (3D UI) of the larger TRON
-program — see `docs/superpowers/specs/` for the full design and roadmap.
+A personal voice assistant. All 6 sub-projects complete — see
+`docs/superpowers/specs/` for the full design history and roadmap.
 
 ## Running from source (development)
 
@@ -23,18 +23,18 @@ program — see `docs/superpowers/specs/` for the full design and roadmap.
 
 Build `TRON.exe` per `docs/build_exe.md`, or if you already have one: just
 double-click it. First launch opens a small setup window asking for your
-Gemini API key (and optionally email settings) and offers to start TRON
-automatically on login — no manual `config.json` editing needed. Every launch
-after that goes straight to the tray icon.
+Gemini API key (and optionally email settings, camera/screen access) and
+offers to start TRON automatically on login — no manual `config.json`
+editing needed. Every launch after that goes straight to the tray icon.
 
 If TRON crashes, check `tron_error.log` next to the exe for a traceback.
 
 ## Orb HUD
 
-A centered, particle-sphere window pops onto the screen the moment you talk
-to TRON and disappears again once the conversation ends — TRON runs quietly
-in the tray the rest of the time. It uses the same color language as the
-tray icon (table below). Toggle it manually anytime from the tray menu's
+A centered particle window pops onto the screen the moment you talk to TRON
+and disappears again once the conversation ends — TRON runs quietly in the
+tray the rest of the time. It uses the same color language as the tray icon
+(table below). Toggle it manually anytime from the tray menu's
 "Show/Hide Orb."
 
 ## Tray icon / orb status colors
@@ -45,7 +45,7 @@ tray icon (table below). Toggle it manually anytime from the tray menu's
 | Blue | Listening | Mic is capturing your speech |
 | Amber | Thinking | Waiting on Gemini's response |
 | Green | Speaking | TRON's reply is playing |
-| Purple | Acting | A tool (open app, media control, email, search) is running |
+| Purple | Acting | A tool (open app, media control, email, search, vision, scan) is running |
 | Red | Error | Network/API failure this turn — press the hotkey again to retry |
 
 ## What TRON can do now
@@ -55,6 +55,20 @@ tray icon (table below). Toggle it manually anytime from the tray menu's
 - Search the web
 - Draft and — after you confirm out loud — send email
 - Remember recent activity across conversations, recite it ("what have you been up to") or clear it on request
+- Look at your screen or through your camera and describe what it sees (off by default — see Privacy below)
+- Run a Windows Defender malware scan and report whether it's finished
+
+## Privacy
+
+Camera and screen access are **off by default**. They're not just discouraged
+by instructions — the `look_at_screen`/`look_via_camera` tools are not even
+declared to Gemini unless you check "Enable camera access"/"Enable screen
+reading" in setup (or set `camera_enabled`/`screen_enabled` to `true` in
+`config.json`), so the model has no tool by that name to call until you
+opt in. No frame is ever saved to disk — captured images go straight into
+the live conversation and are discarded; only the fact that a capture
+happened is logged. Every tool call TRON makes (including vision captures
+and scans) is visible by asking "what have you been up to."
 
 ## Tests
 

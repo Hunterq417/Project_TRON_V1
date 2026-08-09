@@ -9,17 +9,18 @@ One-time build environment setup:
 Build the portable exe:
 
 ```
-.venv\Scripts\pyinstaller --onefile --noconsole --name TRON --collect-all sounddevice --collect-all pystray --collect-all keyboard --collect-all pywebview main.py
+.venv\Scripts\pyinstaller --onefile --noconsole --name TRON --collect-all sounddevice --collect-all pystray --collect-all keyboard --collect-all pywebview --collect-all cv2 main.py
 ```
 
 `--onefile` produces a single `dist\TRON.exe`. `--noconsole` hides the console
-window (TRON is a tray app, not a CLI). The four `--collect-all` flags bundle
+window (TRON is a tray app, not a CLI). The five `--collect-all` flags bundle
 native/backend files these packages need at runtime that PyInstaller's default
 import scanner tends to miss — sounddevice's PortAudio binary, pystray's
-Windows backend, keyboard's low-level hook DLL, and pywebview's Windows
-(Edge WebView2) backend. If a fresh build launches and immediately errors on
-import, check first whether it's one of these four libraries failing to find
-a bundled resource, and add the matching `--collect-all` (or the narrower
+Windows backend, keyboard's low-level hook DLL, pywebview's Windows
+(Edge WebView2) backend, and opencv's native `cv2` extension (webcam capture).
+If a fresh build launches and immediately errors on import, check first
+whether it's one of these five libraries failing to find a bundled resource,
+and add the matching `--collect-all` (or the narrower
 `--collect-binaries`/`--collect-data`) back in. PyInstaller version upgrades
 occasionally change what needs collecting — treat this list as a starting
 point, not a permanent fact.
@@ -60,3 +61,10 @@ xcopy vendor dist\vendor\ /E /I
 9. To test crash logging: temporarily rename `persona.txt` so startup fails,
    relaunch, and confirm `tron_error.log` appears next to the exe with a
    readable traceback. Restore `persona.txt` afterward.
+10. Enable "camera access"/"screen reading" in setup and confirm asking TRON
+    to look at your screen or through the camera works, and that it says
+    something like "let me take a look, sir" first. With both left
+    unchecked, confirm TRON explains it doesn't have that capability rather
+    than silently failing.
+11. Ask TRON to run a malware scan, confirm it responds immediately (not a
+    multi-minute wait), then later ask whether the scan finished.
