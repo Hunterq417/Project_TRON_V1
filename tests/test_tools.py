@@ -114,3 +114,50 @@ def test_forget_recent_activity_clears_log(monkeypatch):
 
     fake_clear.assert_called_once()
     assert "cleared" in result.lower()
+
+
+def test_declarations_for_excludes_vision_tools_by_default():
+    cfg = MagicMock(camera_enabled=False, screen_enabled=False)
+    names = {d["name"] for d in tools.declarations_for(cfg)}
+    assert "look_at_screen" not in names
+    assert "look_via_camera" not in names
+
+
+def test_declarations_for_includes_screen_when_enabled():
+    cfg = MagicMock(camera_enabled=False, screen_enabled=True)
+    names = {d["name"] for d in tools.declarations_for(cfg)}
+    assert "look_at_screen" in names
+    assert "look_via_camera" not in names
+
+
+def test_declarations_for_includes_camera_when_enabled():
+    cfg = MagicMock(camera_enabled=True, screen_enabled=False)
+    names = {d["name"] for d in tools.declarations_for(cfg)}
+    assert "look_via_camera" in names
+    assert "look_at_screen" not in names
+
+
+def test_declarations_for_handles_none_cfg():
+    names = {d["name"] for d in tools.declarations_for(None)}
+    assert "look_at_screen" not in names
+    assert "look_via_camera" not in names
+
+
+def test_scan_for_malware_delegates(monkeypatch):
+    fake_scan = MagicMock(return_value="scan started, sir")
+    monkeypatch.setattr(tools.security_scan, "scan_for_malware", fake_scan)
+
+    result = tools.TOOL_DISPATCH["scan_for_malware"]({}, None)
+
+    fake_scan.assert_called_once_with({}, None)
+    assert result == "scan started, sir"
+
+
+def test_check_scan_status_delegates(monkeypatch):
+    fake_check = MagicMock(return_value="no scan has been run yet, sir")
+    monkeypatch.setattr(tools.security_scan, "check_scan_status", fake_check)
+
+    result = tools.TOOL_DISPATCH["check_scan_status"]({}, None)
+
+    fake_check.assert_called_once_with({}, None)
+    assert result == "no scan has been run yet, sir"

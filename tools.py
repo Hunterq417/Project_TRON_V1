@@ -6,6 +6,7 @@ import app_index
 import email_client
 import media_control
 import memory
+import security_scan
 
 _APP_INDEX_CACHE = None
 
@@ -73,6 +74,14 @@ def _forget_recent_activity(args, cfg):
     return "recent activity log cleared, sir"
 
 
+def _scan_for_malware(args, cfg):
+    return security_scan.scan_for_malware(args, cfg)
+
+
+def _check_scan_status(args, cfg):
+    return security_scan.check_scan_status(args, cfg)
+
+
 TOOL_DISPATCH = {
     "open_target": _open_target,
     "web_search": _web_search,
@@ -84,6 +93,8 @@ TOOL_DISPATCH = {
     "send_email": _send_email,
     "recall_activity": _recall_activity,
     "forget_recent_activity": _forget_recent_activity,
+    "scan_for_malware": _scan_for_malware,
+    "check_scan_status": _check_scan_status,
 }
 
 TOOL_DECLARATIONS = [
@@ -186,4 +197,50 @@ TOOL_DECLARATIONS = [
         "description": "Clear TRON's recent activity log. Use when the user explicitly asks to forget or clear recent activity.",
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "name": "scan_for_malware",
+        "description": (
+            "Start a Windows Defender quick scan for malware/viruses. Runs in the "
+            "background; use check_scan_status later to see if it finished."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "check_scan_status",
+        "description": "Check whether the most recent malware scan has finished and what it found.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
+
+_LOOK_AT_SCREEN_DECLARATION = {
+    "name": "look_at_screen",
+    "description": (
+        "Capture and look at what's currently on the user's screen, then describe it. "
+        'Say something like "let me take a look, sir" before calling this.'
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+_LOOK_VIA_CAMERA_DECLARATION = {
+    "name": "look_via_camera",
+    "description": (
+        "Capture a frame from the webcam and describe what's seen. "
+        'Say something like "let me take a look, sir" before calling this.'
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+VISION_TOOL_NAMES = {"look_at_screen", "look_via_camera"}
+
+
+def declarations_for(cfg) -> list:
+    """The tool schema actually sent to Gemini Live — vision tools are only
+    included if the corresponding config flag is on. This is the structural
+    enforcement of the camera/screen consent model: a tool Gemini was never
+    told about is a tool it cannot call."""
+    declarations = list(TOOL_DECLARATIONS)
+    if cfg is not None and getattr(cfg, "screen_enabled", False):
+        declarations.append(_LOOK_AT_SCREEN_DECLARATION)
+    if cfg is not None and getattr(cfg, "camera_enabled", False):
+        declarations.append(_LOOK_VIA_CAMERA_DECLARATION)
+    return declarations
