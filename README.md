@@ -1,9 +1,9 @@
 # TRON
 
-A personal voice assistant. Sub-project 2/6 (Automation/Tools) of the larger
+A personal voice assistant. Sub-project 3/6 (Packaging/Shell) of the larger
 TRON program — see `docs/superpowers/specs/` for the full design and roadmap.
 
-## Setup
+## Running from source (development)
 
 1. Python 3.13 (this machine only had 3.13 installed; the original spec
    targeted 3.11/3.12 but nothing here needs an older version).
@@ -18,6 +18,16 @@ TRON program — see `docs/superpowers/specs/` for the full design and roadmap.
 6. `.venv\Scripts\python main.py`
 7. Press `Ctrl+Alt+T` (configurable in `config.json`) to talk to TRON. Quit
    from the system tray icon.
+
+## Running the packaged .exe
+
+Build `TRON.exe` per `docs/build_exe.md`, or if you already have one: just
+double-click it. First launch opens a small setup window asking for your
+Gemini API key (and optionally email settings) and offers to start TRON
+automatically on login — no manual `config.json` editing needed. Every launch
+after that goes straight to the tray icon.
+
+If TRON crashes, check `tron_error.log` next to the exe for a traceback.
 
 ## Tray icon status colors
 
