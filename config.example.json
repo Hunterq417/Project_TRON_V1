@@ -6,5 +6,9 @@
   "persona_path": "persona.txt",
   "silence_timeout_s": 45.0,
   "voice_name": "Charon",
-  "model_name": "gemini-2.0-flash-live-001"
+  "model_name": "gemini-2.0-flash-live-001",
+  "smtp_host": "smtp.gmail.com",
+  "smtp_port": 465,
+  "smtp_user": "YOUR_EMAIL@gmail.com",
+  "smtp_app_password": "YOUR_16_CHAR_APP_PASSWORD"
 }

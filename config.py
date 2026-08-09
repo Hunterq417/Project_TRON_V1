@@ -16,6 +16,10 @@ class Config:
     silence_timeout_s: float
     voice_name: str
     model_name: str
+    smtp_host: str
+    smtp_port: int
+    smtp_user: str
+    smtp_app_password: str
 
 
 def load_config() -> Config:
@@ -34,4 +38,8 @@ def load_config() -> Config:
         silence_timeout_s=data.get("silence_timeout_s", 45.0),
         voice_name=data.get("voice_name", "Charon"),
         model_name=data.get("model_name", "gemini-2.0-flash-live-001"),
+        smtp_host=data.get("smtp_host", ""),
+        smtp_port=data.get("smtp_port", 465),
+        smtp_user=data.get("smtp_user", ""),
+        smtp_app_password=data.get("smtp_app_password", ""),
     )
