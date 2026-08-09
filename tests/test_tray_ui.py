@@ -1,0 +1,48 @@
+# tests/test_tray_ui.py
+from unittest.mock import MagicMock
+
+import tray_ui
+import state_manager as sm
+
+
+def test_on_state_change_updates_icon_and_title(monkeypatch):
+    fake_icon = MagicMock()
+    fake_icon_class = MagicMock(return_value=fake_icon)
+    monkeypatch.setattr(tray_ui.pystray, "Icon", fake_icon_class)
+    monkeypatch.setattr(tray_ui.pystray, "Menu", MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "MenuItem", MagicMock())
+
+    ui = tray_ui.TrayUI(quit_callback=MagicMock())
+    ui.on_state_change(sm.State.LISTENING)
+
+    assert fake_icon.title == "TRON: listening"
+    assert fake_icon.icon is not None
+
+
+def test_each_state_gets_a_distinct_color(monkeypatch):
+    fake_icon = MagicMock()
+    monkeypatch.setattr(tray_ui.pystray, "Icon", MagicMock(return_value=fake_icon))
+    monkeypatch.setattr(tray_ui.pystray, "Menu", MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "MenuItem", MagicMock())
+
+    ui = tray_ui.TrayUI(quit_callback=MagicMock())
+
+    seen_colors = set()
+    for state in sm.State:
+        ui.on_state_change(state)
+        seen_colors.add(tray_ui._COLORS[state.name.lower()])
+
+    assert len(seen_colors) == len(list(sm.State))  # every state maps to its own color
+
+
+def test_start_launches_background_thread(monkeypatch):
+    fake_icon = MagicMock()
+    monkeypatch.setattr(tray_ui.pystray, "Icon", MagicMock(return_value=fake_icon))
+    monkeypatch.setattr(tray_ui.pystray, "Menu", MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "MenuItem", MagicMock())
+
+    ui = tray_ui.TrayUI(quit_callback=MagicMock())
+    ui.start()
+
+    assert ui._thread.daemon is True
+    assert ui._thread.is_alive() or fake_icon.run.called
