@@ -3,6 +3,7 @@ import asyncio
 import time
 from enum import Enum, auto
 
+import tools
 from audio_io import DuplexAudio, SAMPLE_RATE_IN
 from gemini_live_client import GeminiLiveSession
 
@@ -12,6 +13,7 @@ class State(Enum):
     LISTENING = auto()
     THINKING = auto()
     SPEAKING = auto()
+    ACTING = auto()
     ERROR = auto()
 
 
@@ -29,6 +31,7 @@ class TronStateMachine:
         on_state_change=None,
         audio: DuplexAudio | None = None,
         session_factory=None,
+        cfg=None,
     ):
         self._api_key = api_key
         self._model_name = model_name
@@ -38,9 +41,11 @@ class TronStateMachine:
         self._on_state_change = on_state_change or (lambda state: None)
         self.state = State.IDLE
         self._audio = audio or DuplexAudio()
+        self._cfg = cfg
         self._session_factory = session_factory or (
             lambda: GeminiLiveSession(
-                self._api_key, self._model_name, self._voice_name, self._persona_text
+                self._api_key, self._model_name, self._voice_name, self._persona_text,
+                tools=tools.TOOL_DECLARATIONS,
             )
         )
 
@@ -83,12 +88,19 @@ class TronStateMachine:
                         await asyncio.sleep(0.05)
 
                 async def recv_loop() -> None:
-                    async for chunk in session.receive():
-                        if chunk:
+                    async for event in session.receive():
+                        if event["type"] == "audio":
                             self._set_state(State.SPEAKING)
-                            self._audio.play_chunk(chunk)
+                            self._audio.play_chunk(event["data"])
                             touch()
-                        else:
+                        elif event["type"] == "tool_call":
+                            self._set_state(State.ACTING)
+                            for call in event["calls"]:
+                                handler = tools.TOOL_DISPATCH[call["name"]]
+                                result = handler(call["args"], self._cfg)
+                                await session.send_tool_response(call["id"], call["name"], result)
+                            touch()
+                        elif event["type"] == "turn_complete":
                             self._set_state(State.THINKING)
 
                 recv_task = asyncio.create_task(recv_loop())

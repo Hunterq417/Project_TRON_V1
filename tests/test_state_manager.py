@@ -25,8 +25,15 @@ class FakeAudio:
 
 
 class FakeSession:
-    def __init__(self, *args, **kwargs):
-        self.sent = []
+    """events: a list of gemini_live_client-style event dicts to replay from receive()."""
+
+    def __init__(self, events=None):
+        self.sent_audio = []
+        self.sent_tool_responses = []
+        self._events = events if events is not None else [
+            {"type": "audio", "data": b"reply-audio"},
+            {"type": "turn_complete"},
+        ]
 
     async def __aenter__(self):
         return self
@@ -35,11 +42,14 @@ class FakeSession:
         return False
 
     async def send_audio_chunk(self, pcm_bytes, sample_rate=16000):
-        self.sent.append(pcm_bytes)
+        self.sent_audio.append(pcm_bytes)
+
+    async def send_tool_response(self, call_id, name, result):
+        self.sent_tool_responses.append((call_id, name, result))
 
     async def receive(self):
-        yield b"reply-audio"
-        yield b""
+        for event in self._events:
+            yield event
 
 
 def test_trigger_runs_full_state_cycle_with_distinct_colors_per_phase():
@@ -116,3 +126,36 @@ def test_failed_session_sets_error_state_and_stays_retriggerable():
     machine.trigger()  # must be retriggerable straight from ERROR, not just from IDLE
     assert machine.state is sm.State.IDLE
     assert attempts["n"] == 2
+
+
+def test_tool_call_event_dispatches_and_sends_response(monkeypatch):
+    import tools
+
+    audio = FakeAudio()
+    audio._mic_chunks = []
+    states = []
+
+    fake_tool = MagicMock(return_value='opened "notepad"')
+    monkeypatch.setitem(tools.TOOL_DISPATCH, "open_target", fake_tool)
+
+    session = FakeSession(events=[
+        {"type": "tool_call", "calls": [{"id": "call-1", "name": "open_target", "args": {"name": "notepad"}}]},
+        {"type": "turn_complete"},
+    ])
+    fake_cfg = MagicMock()
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        on_state_change=states.append,
+        audio=audio,
+        session_factory=lambda: session,
+        cfg=fake_cfg,
+    )
+
+    machine.trigger()
+
+    fake_tool.assert_called_once_with({"name": "notepad"}, fake_cfg)
+    assert session.sent_tool_responses == [("call-1", "open_target", 'opened "notepad"')]
+    assert sm.State.ACTING in states
+    assert machine.state is sm.State.IDLE
