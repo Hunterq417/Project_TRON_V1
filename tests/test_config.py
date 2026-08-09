@@ -1,5 +1,7 @@
 # tests/test_config.py
 import json
+from pathlib import Path
+
 import pytest
 import config as config_module
 
@@ -30,3 +32,30 @@ def test_load_config_missing_file_raises(tmp_path, monkeypatch):
 
     with pytest.raises(FileNotFoundError):
         config_module.load_config()
+
+
+def test_app_dir_dev_mode(monkeypatch):
+    monkeypatch.setattr(config_module.sys, "frozen", False, raising=False)
+    assert config_module.app_dir() == Path(config_module.__file__).parent
+
+
+def test_app_dir_frozen(monkeypatch):
+    monkeypatch.setattr(config_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(config_module.sys, "executable", "C:\\Apps\\TRON\\TRON.exe", raising=False)
+
+    assert config_module.app_dir() == Path("C:\\Apps\\TRON")
+
+
+def test_resolve_path_relative_resolves_against_app_dir(monkeypatch):
+    monkeypatch.setattr(config_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(config_module.sys, "executable", "C:\\Apps\\TRON\\TRON.exe", raising=False)
+
+    assert config_module.resolve_path("persona.txt") == Path("C:\\Apps\\TRON\\persona.txt")
+
+
+def test_resolve_path_absolute_passes_through(monkeypatch):
+    monkeypatch.setattr(config_module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(config_module.sys, "executable", "C:\\Apps\\TRON\\TRON.exe", raising=False)
+
+    absolute = "D:\\elsewhere\\custom_persona.txt"
+    assert config_module.resolve_path(absolute) == Path(absolute)

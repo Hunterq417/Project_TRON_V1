@@ -1,9 +1,27 @@
 # config.py
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
-CONFIG_PATH = Path(__file__).parent / "config.json"
+
+def app_dir() -> Path:
+    """Directory config/persona files live in: next to the .exe when frozen
+    (PyInstaller --onefile extracts to a temp dir, so __file__ is unusable
+    there), next to this script in dev mode."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
+
+
+def resolve_path(path_str: Union[str, Path]) -> Path:
+    """Resolves a config path string against app_dir(), unless it's already absolute."""
+    path = Path(path_str)
+    return path if path.is_absolute() else app_dir() / path
+
+
+CONFIG_PATH = app_dir() / "config.json"
 
 
 @dataclass
