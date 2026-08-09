@@ -10,8 +10,11 @@
 <body>
 <script src="vendor/three.min.js"></script>
 <script>
-const STATE_COLORS = {
-  idle:      0xebebeb,
+// State still drives feedback (halo tint + shimmer energy), but the
+// particle bust itself stays white/cool-blue always — matching the
+// reference image, which is monochrome.
+const STATE_TINTS = {
+  idle:      0x4a5568,
   listening: 0x4285f4,
   thinking:  0xffc107,
   speaking:  0x34c759,
@@ -19,12 +22,12 @@ const STATE_COLORS = {
   error:     0xdc3545,
 };
 let currentState = 'idle';
-function setState(name) { if (STATE_COLORS[name] !== undefined) currentState = name; }
+function setState(name) { if (STATE_TINTS[name] !== undefined) currentState = name; }
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 1.1, 4.2);
-camera.lookAt(0, 0, 0);
+const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0.05, 3.6);
+camera.lookAt(0, 0.05, 0);
 
 const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
 renderer.setClearColor(0x000000, 0);
@@ -37,10 +40,6 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// A soft white radial-gradient sprite, used (tinted per-material) for the
-// glow core, the vignette, and every ring particle. Untextured THREE.Points
-// render as hard squares in WebGL — this is what makes particles read as
-// soft glowing dots instead.
 function makeGlowTexture() {
   const size = 128;
   const c = document.createElement('canvas');
@@ -48,7 +47,7 @@ function makeGlowTexture() {
   const g = c.getContext('2d');
   const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.35, 'rgba(255,255,255,0.7)');
+  grad.addColorStop(0.4, 'rgba(255,255,255,0.55)');
   grad.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, size, size);
@@ -56,111 +55,140 @@ function makeGlowTexture() {
 }
 const glowTex = makeGlowTexture();
 
-// A plain (non-additive) dark radial sprite behind everything, so the orb
-// has some contact/contrast against a bright desktop instead of floating
-// with nothing grounding it.
+// Soft colored halo behind the bust — the main carrier of state feedback,
+// so the particle cloud itself can stay true to the reference's monochrome look.
 function makeVignetteTexture() {
   const size = 128;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const g = c.getContext('2d');
   const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  grad.addColorStop(0, 'rgba(255,255,255,0.5)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, size, size);
   return new THREE.CanvasTexture(c);
 }
-const vignette = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: makeVignetteTexture(), transparent: true, opacity: 0.5, depthWrite: false,
+const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: makeVignetteTexture(), color: STATE_TINTS.idle, transparent: true,
+  opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false,
 }));
-vignette.scale.set(4.2, 4.2, 1);
-scene.add(vignette);
+halo.position.set(0, 0, -0.4);
+halo.scale.set(3.2, 3.2, 1);
+scene.add(halo);
 
-// --- core: layered glow sprites (camera-facing, so it always looks like a glow) ---
-const coreOuter = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: glowTex, color: STATE_COLORS.idle, transparent: true, opacity: 0.5,
-  blending: THREE.AdditiveBlending, depthWrite: false,
-}));
-coreOuter.scale.set(0.9, 0.9, 1);
-scene.add(coreOuter);
+// --- bust profile: a silhouette curve revolved around the vertical axis ---
+// [y (height), r (radius at that height)], top of head to bottom of shoulders.
+const PROFILE = [
+  { y: 1.02, r: 0.02 },
+  { y: 0.92, r: 0.28 },
+  { y: 0.78, r: 0.42 },
+  { y: 0.55, r: 0.47 },
+  { y: 0.30, r: 0.45 },
+  { y: 0.10, r: 0.38 },
+  { y: -0.05, r: 0.27 },
+  { y: -0.18, r: 0.17 },
+  { y: -0.30, r: 0.15 },
+  { y: -0.55, r: 0.17 },
+  { y: -0.70, r: 0.45 },
+  { y: -0.95, r: 0.95 },
+  { y: -1.15, r: 1.05 },
+];
+const Y_TOP = PROFILE[0].y;
+const Y_BOTTOM = PROFILE[PROFILE.length - 1].y;
 
-const coreInner = new THREE.Sprite(new THREE.SpriteMaterial({
-  map: glowTex, color: 0xffffff, transparent: true, opacity: 1,
-  blending: THREE.AdditiveBlending, depthWrite: false,
-}));
-coreInner.scale.set(0.34, 0.34, 1);
-scene.add(coreInner);
+function radiusAt(y) {
+  if (y >= PROFILE[0].y) return PROFILE[0].r;
+  if (y <= Y_BOTTOM) return PROFILE[PROFILE.length - 1].r;
+  for (let i = 0; i < PROFILE.length - 1; i++) {
+    const a = PROFILE[i], b = PROFILE[i + 1];
+    if (y <= a.y && y >= b.y) {
+      const t = (a.y - y) / (a.y - b.y);
+      const s = t * t * (3 - 2 * t); // smoothstep
+      return a.r + (b.r - a.r) * s;
+    }
+  }
+  return 0.3;
+}
 
-// --- radiating spikes: fewer, brighter near the core, fainter toward the tip ---
-const SPIKE_COUNT = 14;
-const spikeGroup = new THREE.Group();
-const spikeLines = [];
-for (let i = 0; i < SPIKE_COUNT; i++) {
-  const theta = Math.random() * Math.PI * 2;
-  const phi = Math.acos(2 * Math.random() - 1);
-  const len = 0.7 + Math.random() * 1.1;
-  const x = Math.sin(phi) * Math.cos(theta) * len;
-  const y = Math.sin(phi) * Math.sin(theta) * len;
-  const z = Math.cos(phi) * len;
-  const geo = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, 0, 0), new THREE.Vector3(x, y, z),
-  ]);
-  const mat = new THREE.LineBasicMaterial({
-    color: STATE_COLORS.idle, transparent: true,
-    opacity: 0.7 - (len - 0.7) * 0.35, // shorter spikes sit brighter, closer to the core
-    blending: THREE.AdditiveBlending, depthWrite: false,
+const Z_SQUASH = 0.82; // front-back compression, so a turned view reads correctly
+
+function buildParticles(count, { shell, size, brightnessMin, brightnessMax }) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const phases = new Float32Array(count);
+  const baseBrightness = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const y = Y_BOTTOM + Math.random() * (Y_TOP - Y_BOTTOM);
+    const R = radiusAt(y);
+    const theta = Math.random() * Math.PI * 2;
+    const radius = shell ? R * (0.88 + Math.random() * 0.18) : R * Math.random() * 0.78;
+
+    positions[i * 3 + 0] = Math.cos(theta) * radius;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = Math.sin(theta) * radius * Z_SQUASH;
+
+    const b = brightnessMin + Math.random() * (brightnessMax - brightnessMin);
+    baseBrightness[i] = b;
+    // cool white-blue, matching the reference's monochrome dust
+    colors[i * 3 + 0] = b * 0.86;
+    colors[i * 3 + 1] = b * 0.93;
+    colors[i * 3 + 2] = b;
+
+    phases[i] = Math.random() * Math.PI * 2;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+  const mat = new THREE.PointsMaterial({
+    map: glowTex, size, vertexColors: true, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   });
-  const line = new THREE.Line(geo, mat);
-  spikeGroup.add(line);
-  spikeLines.push(mat);
-}
-scene.add(spikeGroup);
 
-// --- particle ring: a real 3D ring, tilted by rotating the group ---
-const RING_COUNT = 220;
-const ringPositions = new Float32Array(RING_COUNT * 3);
-for (let i = 0; i < RING_COUNT; i++) {
-  const a = (i / RING_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.08;
-  const rad = 1.55 + (Math.random() - 0.5) * 0.22;
-  ringPositions[i * 3 + 0] = Math.cos(a) * rad;
-  ringPositions[i * 3 + 1] = (Math.random() - 0.5) * 0.06;
-  ringPositions[i * 3 + 2] = Math.sin(a) * rad;
-}
-const ringGeo = new THREE.BufferGeometry();
-ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
-const ringMat = new THREE.PointsMaterial({
-  map: glowTex, color: STATE_COLORS.idle, size: 0.09, transparent: true, opacity: 0.9,
-  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
-});
-const ring = new THREE.Points(ringGeo, ringMat);
-ring.rotation.x = Math.PI / 2.6; // tilt the ring plane toward the camera
-scene.add(ring);
-
-function setColor(hex) {
-  coreOuter.material.color.setHex(hex);
-  spikeLines.forEach(m => m.color.setHex(hex));
-  ringMat.color.setHex(hex);
+  const points = new THREE.Points(geo, mat);
+  return { points, colors, phases, baseBrightness };
 }
 
+const shellSystem = buildParticles(3200, { shell: true, size: 0.024, brightnessMin: 0.55, brightnessMax: 1.0 });
+const starSystem = buildParticles(500, { shell: false, size: 0.016, brightnessMin: 0.25, brightnessMax: 0.7 });
+
+const bust = new THREE.Group();
+bust.add(shellSystem.points, starSystem.points);
+bust.rotation.y = 0.32; // turned slightly, like the reference — a portrait, not a front-on mugshot
+scene.add(bust);
+
+function twinkle(system, t, speedMul) {
+  const { colors, phases, baseBrightness, points } = system;
+  const count = baseBrightness.length;
+  for (let i = 0; i < count; i++) {
+    const flicker = 0.75 + 0.25 * Math.sin(t * 1.6 * speedMul + phases[i]);
+    const b = baseBrightness[i] * flicker;
+    colors[i * 3 + 0] = b * 0.86;
+    colors[i * 3 + 1] = b * 0.93;
+    colors[i * 3 + 2] = b;
+  }
+  points.geometry.attributes.color.needsUpdate = true;
+}
+
+const clockStart = performance.now();
 function animate() {
   requestAnimationFrame(animate);
+  const t = (performance.now() - clockStart) / 1000;
 
-  setColor(STATE_COLORS[currentState]);
-
-  const speedMul = currentState === 'idle' ? 0.3 : currentState === 'error' ? 2.4 : 1;
-  const pulse = (currentState === 'speaking' || currentState === 'acting')
-    ? 1 + 0.12 * Math.sin(Date.now() / 140)
+  halo.material.color.setHex(STATE_TINTS[currentState]);
+  const speedMul = currentState === 'idle' ? 0.5 : currentState === 'error' ? 2.2 : 1.15;
+  const haloPulse = (currentState === 'speaking' || currentState === 'acting')
+    ? 1 + 0.15 * Math.sin(t * 6)
     : 1;
-  const wobble = Math.sin(Date.now() / 1800) * 0.06; // gentle idle drift, not mechanical spin
 
-  ring.rotation.z += 0.006 * speedMul;
-  ring.rotation.x = Math.PI / 2.6 + wobble;
-  spikeGroup.rotation.y += 0.003 * speedMul;
-  spikeGroup.rotation.x += 0.0015 * speedMul;
+  twinkle(shellSystem, t, speedMul);
+  twinkle(starSystem, t, speedMul * 0.8);
 
-  coreInner.scale.setScalar(0.34 * pulse);
-  coreOuter.scale.setScalar(0.9 * pulse * (1 + 0.05 * Math.sin(Date.now() / 300)));
+  bust.rotation.y = 0.32 + Math.sin(t * 0.25) * 0.05; // gentle idle drift, not a spin
+  halo.scale.setScalar(3.2 * haloPulse);
 
   renderer.render(scene, camera);
 }
