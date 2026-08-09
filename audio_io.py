@@ -53,3 +53,14 @@ class DuplexAudio:
         while not self.mic_queue.empty():
             chunks.append(self.mic_queue.get_nowait())
         return b"".join(chunks)
+
+
+def rms_level(pcm_bytes: bytes) -> float:
+    """Normalized loudness (roughly 0-1) of a PCM16 chunk, for driving audio-reactive UI.
+    Speech RMS rarely approaches full-scale, so this is boosted and clamped rather than
+    a strict physical measurement — tuned to look right, not to be an accurate meter."""
+    if not pcm_bytes:
+        return 0.0
+    audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
+    rms = np.sqrt(np.mean(audio ** 2))
+    return min(rms / 32768.0 * 4.0, 1.0)

@@ -276,3 +276,39 @@ def test_default_session_factory_uses_declarations_for_cfg(monkeypatch):
     names = {d["name"] for d in captured["tools"]}
     assert "look_at_screen" in names
     assert "look_via_camera" not in names
+
+
+def test_audio_event_reports_rms_level(monkeypatch):
+    audio = FakeAudio()
+    audio._mic_chunks = []
+    levels = []
+
+    monkeypatch.setattr(sm, "rms_level", lambda pcm_bytes: 0.73)
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        audio=audio,
+        session_factory=lambda: FakeSession(),
+        on_audio_level=levels.append,
+    )
+
+    machine.trigger()
+
+    assert 0.73 in levels
+
+
+def test_on_audio_level_defaults_to_a_no_op():
+    audio = FakeAudio()
+    audio._mic_chunks = []
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        audio=audio,
+        session_factory=lambda: FakeSession(),
+    )
+
+    machine.trigger()  # must not raise with no on_audio_level provided
+
+    assert machine.state is sm.State.IDLE

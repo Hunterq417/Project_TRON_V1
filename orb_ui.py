@@ -46,6 +46,12 @@ class OrbUI:
         else:
             self._show()
 
+    def on_audio_level(self, level: float) -> None:
+        try:
+            self._window.evaluate_js(f"setAudioLevel({level})")
+        except Exception:
+            pass  # same non-fatal reasoning as on_state_change — purely visual
+
     def toggle_visibility(self) -> None:
         self._hide() if self._visible else self._show()
 

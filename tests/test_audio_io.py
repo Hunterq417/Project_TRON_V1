@@ -52,3 +52,24 @@ def test_start_stop_lifecycle(monkeypatch):
     audio.stop()
     fake_in.stop.assert_called_once()
     fake_out.stop.assert_called_once()
+
+
+def test_rms_level_silence_is_zero():
+    silence = np.zeros(100, dtype=np.int16).tobytes()
+    assert audio_io.rms_level(silence) == 0.0
+
+
+def test_rms_level_empty_bytes_is_zero():
+    assert audio_io.rms_level(b"") == 0.0
+
+
+def test_rms_level_louder_audio_scores_higher():
+    quiet = (np.ones(100, dtype=np.int16) * 500).tobytes()
+    loud = (np.ones(100, dtype=np.int16) * 5000).tobytes()
+
+    assert audio_io.rms_level(loud) > audio_io.rms_level(quiet)
+
+
+def test_rms_level_is_clamped_to_one():
+    full_scale = np.full(100, 32767, dtype=np.int16).tobytes()
+    assert audio_io.rms_level(full_scale) == 1.0

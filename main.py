@@ -40,6 +40,7 @@ def main() -> None:
         persona_text=persona_text,
         silence_timeout_s=cfg.silence_timeout_s,
         on_state_change=on_state_change,
+        on_audio_level=orb.on_audio_level,
         cfg=cfg,
     )
 

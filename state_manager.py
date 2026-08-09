@@ -6,7 +6,7 @@ from enum import Enum, auto
 import memory
 import perception
 import tools
-from audio_io import DuplexAudio, SAMPLE_RATE_IN
+from audio_io import DuplexAudio, SAMPLE_RATE_IN, rms_level
 from gemini_live_client import GeminiLiveSession
 
 
@@ -31,6 +31,7 @@ class TronStateMachine:
         persona_text: str,
         silence_timeout_s: float,
         on_state_change=None,
+        on_audio_level=None,
         audio: DuplexAudio | None = None,
         session_factory=None,
         cfg=None,
@@ -41,6 +42,7 @@ class TronStateMachine:
         self._persona_text = persona_text
         self._silence_timeout_s = silence_timeout_s
         self._on_state_change = on_state_change or (lambda state: None)
+        self._on_audio_level = on_audio_level or (lambda level: None)
         self.state = State.IDLE
         self._audio = audio or DuplexAudio()
         self._cfg = cfg
@@ -106,6 +108,7 @@ class TronStateMachine:
                         if event["type"] == "audio":
                             self._set_state(State.SPEAKING)
                             self._audio.play_chunk(event["data"])
+                            self._on_audio_level(rms_level(event["data"]))
                             touch()
                         elif event["type"] == "tool_call":
                             self._set_state(State.ACTING)

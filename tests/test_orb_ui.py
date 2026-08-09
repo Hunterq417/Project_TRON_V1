@@ -126,6 +126,27 @@ def test_toggle_visibility_is_a_manual_override(monkeypatch):
     fake_window.hide.assert_called_once()
 
 
+def test_on_audio_level_pushes_js(monkeypatch):
+    fake_window = MagicMock()
+    monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
+    monkeypatch.setattr(orb_ui.webview, "start", MagicMock())
+
+    ui = orb_ui.OrbUI()
+    ui.on_audio_level(0.42)
+
+    fake_window.evaluate_js.assert_called_once_with("setAudioLevel(0.42)")
+
+
+def test_on_audio_level_swallows_errors_before_window_ready(monkeypatch):
+    fake_window = MagicMock()
+    fake_window.evaluate_js.side_effect = Exception("not ready")
+    monkeypatch.setattr(orb_ui.webview, "create_window", MagicMock(return_value=fake_window))
+    monkeypatch.setattr(orb_ui.webview, "start", MagicMock())
+
+    ui = orb_ui.OrbUI()
+    ui.on_audio_level(0.9)  # must not raise
+
+
 def test_start_launches_background_thread(monkeypatch):
     fake_window = MagicMock()
     fake_start = MagicMock()
