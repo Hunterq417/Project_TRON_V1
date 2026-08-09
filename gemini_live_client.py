@@ -1,16 +1,33 @@
 # gemini_live_client.py
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from google import genai
 from google.genai import types
 
 
 class GeminiLiveSession:
-    """One Gemini Live conversation: PCM audio in, PCM audio (+ optional text) out."""
+    """One Gemini Live conversation: PCM audio in, tagged events (audio/tool_call/turn_complete) out."""
 
-    def __init__(self, api_key: str, model_name: str, voice_name: str, system_instruction: str):
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str,
+        voice_name: str,
+        system_instruction: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ):
         self._client = genai.Client(api_key=api_key)
         self._model_name = model_name
+
+        live_tools = None
+        if tools:
+            live_tools = [types.Tool(function_declarations=[
+                types.FunctionDeclaration(
+                    name=t["name"], description=t["description"], parameters=t.get("parameters")
+                )
+                for t in tools
+            ])]
+
         self._config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
@@ -19,6 +36,7 @@ class GeminiLiveSession:
                 )
             ),
             system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
+            tools=live_tools,
         )
         self._connect_cm = None
         self._session = None
@@ -37,10 +55,22 @@ class GeminiLiveSession:
             audio=types.Blob(data=pcm_bytes, mime_type=f"audio/pcm;rate={sample_rate}")
         )
 
-    async def receive(self) -> AsyncIterator[bytes]:
-        """Yields raw PCM audio chunks as TRON speaks; yields b"" once per completed turn."""
+    async def send_tool_response(self, call_id: str, name: str, result: str) -> None:
+        await self._session.send_tool_response(
+            function_responses=[types.FunctionResponse(id=call_id, name=name, response={"result": result})]
+        )
+
+    async def receive(self) -> AsyncIterator[Dict[str, Any]]:
+        """Yields tagged events: {"type": "audio", "data": bytes},
+        {"type": "tool_call", "calls": [...]}, or {"type": "turn_complete"}."""
         async for response in self._session.receive():
             if response.data:
-                yield response.data
+                yield {"type": "audio", "data": response.data}
+            if response.tool_call and response.tool_call.function_calls:
+                calls = [
+                    {"id": fc.id, "name": fc.name, "args": dict(fc.args or {})}
+                    for fc in response.tool_call.function_calls
+                ]
+                yield {"type": "tool_call", "calls": calls}
             if response.server_content and response.server_content.turn_complete:
-                yield b""
+                yield {"type": "turn_complete"}
