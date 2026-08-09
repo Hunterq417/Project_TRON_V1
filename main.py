@@ -29,6 +29,7 @@ def main() -> None:
         persona_text=persona_text,
         silence_timeout_s=cfg.silence_timeout_s,
         on_state_change=tray.on_state_change,
+        cfg=cfg,
     )
 
     trigger = HotkeyTrigger(cfg.hotkey, on_trigger=machine.trigger)

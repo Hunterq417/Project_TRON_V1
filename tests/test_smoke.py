@@ -27,10 +27,10 @@ class ScriptedAudio:
 
 
 class ScriptedGeminiSession:
-    """Fake Gemini Live session standing in for the real API in dry-run mode."""
+    """Fake Gemini Live session: answers, then calls a tool, then answers again."""
 
     def __init__(self, *args, **kwargs):
-        pass
+        self.sent_tool_responses = []
 
     async def __aenter__(self):
         return self
@@ -41,9 +41,17 @@ class ScriptedGeminiSession:
     async def send_audio_chunk(self, pcm_bytes, sample_rate=16000):
         pass
 
+    async def send_tool_response(self, call_id, name, result):
+        self.sent_tool_responses.append((call_id, name, result))
+
     async def receive(self):
-        yield b"yes-sir-i-am-here"
-        yield b""
+        yield {"type": "audio", "data": b"one-moment-sir"}
+        yield {
+            "type": "tool_call",
+            "calls": [{"id": "call-1", "name": "open_target", "args": {"name": "notepad"}}],
+        }
+        yield {"type": "audio", "data": b"done-sir"}
+        yield {"type": "turn_complete"}
 
 
 def test_wake_trigger_produces_a_spoken_response_dry_run():
@@ -64,8 +72,36 @@ def test_wake_trigger_produces_a_spoken_response_dry_run():
     machine.trigger()
 
     assert audio.played, "expected at least one non-empty response chunk played back"
-    assert b"yes-sir-i-am-here" in audio.played
+    assert b"one-moment-sir" in audio.played
     assert machine.state is sm.State.IDLE
     assert states[0] is sm.State.LISTENING
     assert sm.State.SPEAKING in states
     assert states[-1] is sm.State.IDLE
+
+
+def test_wake_trigger_handles_a_tool_call_mid_conversation(monkeypatch):
+    import tools
+
+    audio = ScriptedAudio()
+    states = []
+    fake_tool = MagicMock(return_value='opened "notepad"')
+    monkeypatch.setitem(tools.TOOL_DISPATCH, "open_target", fake_tool)
+
+    machine = sm.TronStateMachine(
+        api_key="dry-run-key",
+        model_name="gemini-2.0-flash-live-001",
+        voice_name="Charon",
+        persona_text="You are TRON. Address the user as sir.",
+        silence_timeout_s=0.1,
+        on_state_change=states.append,
+        audio=audio,
+        session_factory=lambda: ScriptedGeminiSession(),
+        cfg=MagicMock(),
+    )
+
+    machine.trigger()
+
+    fake_tool.assert_called_once()
+    assert b"done-sir" in audio.played
+    assert sm.State.ACTING in states
+    assert machine.state is sm.State.IDLE
