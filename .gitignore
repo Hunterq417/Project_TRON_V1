@@ -7,3 +7,6 @@ models/*.onnx
 .gstack/
 memory/
 tron_error.log
+build/
+dist/
+*.spec
