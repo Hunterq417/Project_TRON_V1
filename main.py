@@ -1,6 +1,4 @@
 # main.py
-import sys
-import time
 import traceback
 
 import config as config_module
@@ -23,9 +21,11 @@ def main() -> None:
             f'unknown wake_mode "{cfg.wake_mode}" in config.json — use "hotkey" or "openwakeword"'
         )
 
+    # OrbUI() must be constructed on the main thread — its run() call below blocks
+    # the main thread running pywebview's GUI loop, which pywebview requires.
     orb = OrbUI()
     tray = TrayUI(
-        quit_callback=lambda: _quit(trigger, tray),
+        quit_callback=lambda: _quit(trigger, tray, orb),
         toggle_orb_callback=orb.toggle_visibility,
     )
 
@@ -52,22 +52,23 @@ def main() -> None:
         trigger = OpenWakeWordTrigger(model_path, on_trigger=machine.trigger)
         ready_message = 'TRON is running. Say "hey tron" to talk. Quit from the tray icon menu.'
 
-    trigger.start()
-    tray.start()
-    orb.start()
+    def on_gui_ready() -> None:
+        # Runs on its own thread once pywebview's GUI loop has started — trigger
+        # and tray don't touch the native orb window, so they're safe to start here.
+        trigger.start()
+        tray.start()
+        print(ready_message)
 
-    print(ready_message)
     try:
-        while True:
-            time.sleep(1)
+        orb.run(on_gui_ready)  # blocks the main thread until orb.quit() is called
     except KeyboardInterrupt:
-        _quit(trigger, tray)
+        _quit(trigger, tray, orb)
 
 
-def _quit(trigger, tray: TrayUI) -> None:
+def _quit(trigger, tray: TrayUI, orb: OrbUI) -> None:
     trigger.stop()
     tray.stop()
-    sys.exit(0)
+    orb.quit()  # unblocks the main thread's orb.run() call in main(), letting the process exit
 
 
 def _run_with_crash_log() -> None:
