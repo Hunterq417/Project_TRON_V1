@@ -37,47 +37,92 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// --- core: bright sphere + soft additive glow shell ---
-const coreGeo = new THREE.SphereGeometry(0.16, 24, 24);
-const coreMat = new THREE.MeshBasicMaterial({ color: STATE_COLORS.idle });
-const core = new THREE.Mesh(coreGeo, coreMat);
-scene.add(core);
+// A soft white radial-gradient sprite, used (tinted per-material) for the
+// glow core, the vignette, and every ring particle. Untextured THREE.Points
+// render as hard squares in WebGL — this is what makes particles read as
+// soft glowing dots instead.
+function makeGlowTexture() {
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.7)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = makeGlowTexture();
 
-const glowGeo = new THREE.SphereGeometry(0.4, 24, 24);
-const glowMat = new THREE.MeshBasicMaterial({
-  color: STATE_COLORS.idle, transparent: true, opacity: 0.25,
+// A plain (non-additive) dark radial sprite behind everything, so the orb
+// has some contact/contrast against a bright desktop instead of floating
+// with nothing grounding it.
+function makeVignetteTexture() {
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, 'rgba(0,0,0,0.55)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(c);
+}
+const vignette = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: makeVignetteTexture(), transparent: true, opacity: 0.5, depthWrite: false,
+}));
+vignette.scale.set(4.2, 4.2, 1);
+scene.add(vignette);
+
+// --- core: layered glow sprites (camera-facing, so it always looks like a glow) ---
+const coreOuter = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTex, color: STATE_COLORS.idle, transparent: true, opacity: 0.5,
   blending: THREE.AdditiveBlending, depthWrite: false,
-});
-const glow = new THREE.Mesh(glowGeo, glowMat);
-scene.add(glow);
+}));
+coreOuter.scale.set(0.9, 0.9, 1);
+scene.add(coreOuter);
 
-// --- radiating spikes: real 3D directions, not a flat starburst ---
-const SPIKE_COUNT = 22;
+const coreInner = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: glowTex, color: 0xffffff, transparent: true, opacity: 1,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+}));
+coreInner.scale.set(0.34, 0.34, 1);
+scene.add(coreInner);
+
+// --- radiating spikes: fewer, brighter near the core, fainter toward the tip ---
+const SPIKE_COUNT = 14;
 const spikeGroup = new THREE.Group();
-const spikeMat = new THREE.LineBasicMaterial({
-  color: STATE_COLORS.idle, transparent: true, opacity: 0.55,
-  blending: THREE.AdditiveBlending, depthWrite: false,
-});
+const spikeLines = [];
 for (let i = 0; i < SPIKE_COUNT; i++) {
   const theta = Math.random() * Math.PI * 2;
   const phi = Math.acos(2 * Math.random() - 1);
-  const len = 0.9 + Math.random() * 1.1;
+  const len = 0.7 + Math.random() * 1.1;
   const x = Math.sin(phi) * Math.cos(theta) * len;
   const y = Math.sin(phi) * Math.sin(theta) * len;
   const z = Math.cos(phi) * len;
   const geo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0), new THREE.Vector3(x, y, z),
   ]);
-  spikeGroup.add(new THREE.Line(geo, spikeMat));
+  const mat = new THREE.LineBasicMaterial({
+    color: STATE_COLORS.idle, transparent: true,
+    opacity: 0.7 - (len - 0.7) * 0.35, // shorter spikes sit brighter, closer to the core
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const line = new THREE.Line(geo, mat);
+  spikeGroup.add(line);
+  spikeLines.push(mat);
 }
 scene.add(spikeGroup);
 
 // --- particle ring: a real 3D ring, tilted by rotating the group ---
-const RING_COUNT = 260;
+const RING_COUNT = 220;
 const ringPositions = new Float32Array(RING_COUNT * 3);
 for (let i = 0; i < RING_COUNT; i++) {
   const a = (i / RING_COUNT) * Math.PI * 2 + (Math.random() - 0.5) * 0.08;
-  const rad = 1.6 + (Math.random() - 0.5) * 0.25;
+  const rad = 1.55 + (Math.random() - 0.5) * 0.22;
   ringPositions[i * 3 + 0] = Math.cos(a) * rad;
   ringPositions[i * 3 + 1] = (Math.random() - 0.5) * 0.06;
   ringPositions[i * 3 + 2] = Math.sin(a) * rad;
@@ -85,17 +130,16 @@ for (let i = 0; i < RING_COUNT; i++) {
 const ringGeo = new THREE.BufferGeometry();
 ringGeo.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
 const ringMat = new THREE.PointsMaterial({
-  color: STATE_COLORS.idle, size: 0.045, transparent: true, opacity: 0.85,
-  blending: THREE.AdditiveBlending, depthWrite: false,
+  map: glowTex, color: STATE_COLORS.idle, size: 0.09, transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
 });
 const ring = new THREE.Points(ringGeo, ringMat);
 ring.rotation.x = Math.PI / 2.6; // tilt the ring plane toward the camera
 scene.add(ring);
 
 function setColor(hex) {
-  core.material.color.setHex(hex);
-  glow.material.color.setHex(hex);
-  spikeMat.color.setHex(hex);
+  coreOuter.material.color.setHex(hex);
+  spikeLines.forEach(m => m.color.setHex(hex));
   ringMat.color.setHex(hex);
 }
 
@@ -106,15 +150,17 @@ function animate() {
 
   const speedMul = currentState === 'idle' ? 0.3 : currentState === 'error' ? 2.4 : 1;
   const pulse = (currentState === 'speaking' || currentState === 'acting')
-    ? 1 + 0.1 * Math.sin(Date.now() / 140)
+    ? 1 + 0.12 * Math.sin(Date.now() / 140)
     : 1;
+  const wobble = Math.sin(Date.now() / 1800) * 0.06; // gentle idle drift, not mechanical spin
 
   ring.rotation.z += 0.006 * speedMul;
+  ring.rotation.x = Math.PI / 2.6 + wobble;
   spikeGroup.rotation.y += 0.003 * speedMul;
   spikeGroup.rotation.x += 0.0015 * speedMul;
 
-  core.scale.setScalar(pulse);
-  glow.scale.setScalar(pulse * (1 + 0.05 * Math.sin(Date.now() / 300)));
+  coreInner.scale.setScalar(0.34 * pulse);
+  coreOuter.scale.setScalar(0.9 * pulse * (1 + 0.05 * Math.sin(Date.now() / 300)));
 
   renderer.render(scene, camera);
 }
