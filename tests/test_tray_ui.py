@@ -46,3 +46,29 @@ def test_start_launches_background_thread(monkeypatch):
 
     assert ui._thread.daemon is True
     assert ui._thread.is_alive() or fake_icon.run.called
+
+
+def test_menu_includes_orb_toggle_when_callback_provided(monkeypatch):
+    fake_menu_item = MagicMock(side_effect=lambda *a, **k: MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "Icon", MagicMock(return_value=MagicMock()))
+    monkeypatch.setattr(tray_ui.pystray, "Menu", MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "MenuItem", fake_menu_item)
+
+    tray_ui.TrayUI(quit_callback=MagicMock(), toggle_orb_callback=MagicMock())
+
+    labels = [call.args[0] for call in fake_menu_item.call_args_list]
+    assert "Show/Hide Orb" in labels
+    assert "Quit" in labels
+
+
+def test_menu_omits_orb_toggle_when_callback_not_provided(monkeypatch):
+    fake_menu_item = MagicMock(side_effect=lambda *a, **k: MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "Icon", MagicMock(return_value=MagicMock()))
+    monkeypatch.setattr(tray_ui.pystray, "Menu", MagicMock())
+    monkeypatch.setattr(tray_ui.pystray, "MenuItem", fake_menu_item)
+
+    tray_ui.TrayUI(quit_callback=MagicMock())
+
+    labels = [call.args[0] for call in fake_menu_item.call_args_list]
+    assert "Show/Hide Orb" not in labels
+    assert "Quit" in labels

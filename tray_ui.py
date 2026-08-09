@@ -25,12 +25,17 @@ def _make_icon_image(color) -> Image.Image:
 class TrayUI:
     """System tray icon reflecting TronStateMachine state. Runs pystray's blocking loop on its own thread."""
 
-    def __init__(self, quit_callback: Callable[[], None]):
+    def __init__(self, quit_callback: Callable[[], None], toggle_orb_callback: Callable[[], None] | None = None):
+        menu_items = []
+        if toggle_orb_callback is not None:
+            menu_items.append(pystray.MenuItem("Show/Hide Orb", lambda: toggle_orb_callback()))
+        menu_items.append(pystray.MenuItem("Quit", lambda: quit_callback()))
+
         self._icon = pystray.Icon(
             "tron",
             icon=_make_icon_image(_COLORS["idle"]),
             title="TRON: idle",
-            menu=pystray.Menu(pystray.MenuItem("Quit", lambda: quit_callback())),
+            menu=pystray.Menu(*menu_items),
         )
         self._thread = threading.Thread(target=self._icon.run, daemon=True)
 
