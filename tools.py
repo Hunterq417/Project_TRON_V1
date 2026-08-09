@@ -20,6 +20,8 @@ def _get_app_index():
 
 def _open_target(args, cfg):
     name = args["name"]
+    if app_index.try_direct_launch(name):
+        return f'opened "{name}"'
     path = app_index.resolve(name, _get_app_index())
     if path is None:
         return f'could not find anything called "{name}", sir'

@@ -44,11 +44,26 @@ def build_index(
 
 
 def resolve(query: str, index: Dict[str, Path]) -> Optional[Path]:
-    """Fuzzy-matches a spoken name against the index. Returns the best match or None."""
+    """Fuzzy-matches a spoken name against the index. Returns the best match or None.
+    cutoff=0.65 (not the more permissive 0.5) because a wrong-but-plausible match
+    (e.g. "notepad" -> "OneNote.lnk") is worse than an honest "couldn't find it" —
+    better to fall through to try_direct_launch or a clear failure than guess."""
     if not index:
         return None
-    matches = difflib.get_close_matches(query.lower(), index.keys(), n=1, cutoff=0.5)
+    matches = difflib.get_close_matches(query.lower(), index.keys(), n=1, cutoff=0.65)
     return index[matches[0]] if matches else None
+
+
+def try_direct_launch(name: str) -> bool:
+    """Attempts to launch `name` directly via the OS — handles built-in Windows
+    utilities (notepad, calc, mspaint, control, explorer, ...) that Windows resolves
+    via PATH/App Paths without ever appearing as a Start Menu .lnk shortcut. Returns
+    True on success; False (never raises) if Windows can't resolve the bare name."""
+    try:
+        os.startfile(name)
+        return True
+    except OSError:
+        return False
 
 
 def launch(path: Path) -> None:

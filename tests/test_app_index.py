@@ -47,6 +47,13 @@ def test_resolve_returns_none_for_empty_index():
     assert app_index.resolve("anything", {}) is None
 
 
+def test_resolve_rejects_weak_matches_below_the_stricter_cutoff():
+    # "notepad" vs "onenote" scores ~0.57 — plausible-looking but wrong, and
+    # below the 0.65 cutoff. A wrong match is worse than an honest "not found".
+    index = {"onenote": Path("C:/x/OneNote.lnk")}
+    assert app_index.resolve("notepad", index) is None
+
+
 def test_launch_calls_os_startfile(monkeypatch):
     fake_startfile = MagicMock()
     monkeypatch.setattr(app_index.os, "startfile", fake_startfile, raising=False)
@@ -54,3 +61,18 @@ def test_launch_calls_os_startfile(monkeypatch):
     app_index.launch(Path("C:/x/notepad.lnk"))
 
     fake_startfile.assert_called_once_with("C:\\x\\notepad.lnk")
+
+
+def test_try_direct_launch_returns_true_on_success(monkeypatch):
+    fake_startfile = MagicMock()
+    monkeypatch.setattr(app_index.os, "startfile", fake_startfile, raising=False)
+
+    assert app_index.try_direct_launch("notepad") is True
+    fake_startfile.assert_called_once_with("notepad")
+
+
+def test_try_direct_launch_returns_false_when_windows_cant_resolve_it(monkeypatch):
+    fake_startfile = MagicMock(side_effect=OSError("not found"))
+    monkeypatch.setattr(app_index.os, "startfile", fake_startfile, raising=False)
+
+    assert app_index.try_direct_launch("not-a-real-command-xyz") is False

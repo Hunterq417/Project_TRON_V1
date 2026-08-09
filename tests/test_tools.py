@@ -11,18 +11,30 @@ def test_every_declaration_has_a_matching_dispatch_entry():
     assert declared_names == dispatched_names
 
 
-def test_open_target_found(monkeypatch):
-    monkeypatch.setattr(tools, "_APP_INDEX_CACHE", {"notepad": Path("C:/x/notepad.lnk")})
-    fake_launch = MagicMock()
-    monkeypatch.setattr(tools.app_index, "launch", fake_launch)
+def test_open_target_uses_direct_launch_when_available(monkeypatch):
+    fake_try_direct = MagicMock(return_value=True)
+    monkeypatch.setattr(tools.app_index, "try_direct_launch", fake_try_direct)
 
     result = tools.TOOL_DISPATCH["open_target"]({"name": "notepad"}, None)
 
-    fake_launch.assert_called_once_with(Path("C:/x/notepad.lnk"))
+    fake_try_direct.assert_called_once_with("notepad")
     assert "notepad" in result.lower()
 
 
+def test_open_target_found(monkeypatch):
+    monkeypatch.setattr(tools.app_index, "try_direct_launch", lambda name: False)
+    monkeypatch.setattr(tools, "_APP_INDEX_CACHE", {"chrome": Path("C:/x/chrome.lnk")})
+    fake_launch = MagicMock()
+    monkeypatch.setattr(tools.app_index, "launch", fake_launch)
+
+    result = tools.TOOL_DISPATCH["open_target"]({"name": "chrome"}, None)
+
+    fake_launch.assert_called_once_with(Path("C:/x/chrome.lnk"))
+    assert "chrome" in result.lower()
+
+
 def test_open_target_not_found(monkeypatch):
+    monkeypatch.setattr(tools.app_index, "try_direct_launch", lambda name: False)
     monkeypatch.setattr(tools, "_APP_INDEX_CACHE", {"notepad": Path("C:/x/notepad.lnk")})
 
     result = tools.TOOL_DISPATCH["open_target"]({"name": "spreadsheet thing"}, None)
