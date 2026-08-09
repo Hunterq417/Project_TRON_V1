@@ -28,19 +28,21 @@ pywebview's Windows backend uses the Edge WebView2 runtime, which ships with
 Windows 10/11 by default. If the orb window fails to render on a machine
 without it, install the "WebView2 Runtime" from Microsoft.
 
-`persona.txt` and `orb.html` are intentionally **not** bundled into the exe —
-they need to live next to `dist\TRON.exe` so they're user-editable without a
-rebuild:
+`persona.txt`, `orb.html`, and `vendor\` are intentionally **not** bundled
+into the exe — they need to live next to `dist\TRON.exe` so `persona.txt`
+and `orb.html` stay user-editable without a rebuild (`orb.html` loads
+`vendor\three.min.js` via a relative path, so `vendor\` has to travel with it):
 
 ```
 copy persona.txt dist\persona.txt
 copy orb.html dist\orb.html
+xcopy vendor dist\vendor\ /E /I
 ```
 
 ## Smoke-testing the build
 
 1. From a fresh folder (not the repo — simulates a real install), copy only
-   `dist\TRON.exe`, `persona.txt`, and `orb.html`.
+   `dist\TRON.exe`, `persona.txt`, `orb.html`, and the `vendor\` folder.
 2. Double-click `TRON.exe`. The first-time setup window should appear.
 3. Enter a Gemini API key, leave the rest default, save.
 4. Confirm `config.json` appears next to `TRON.exe` (not anywhere else) and
