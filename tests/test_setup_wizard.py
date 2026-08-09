@@ -32,6 +32,20 @@ def test_build_config_dict_defaults_when_optional_fields_blank():
     assert result["smtp_host"] == ""
 
 
+def test_build_config_dict_defaults_camera_and_screen_to_false():
+    form = {"gemini_api_key": "my-key"}
+    result = setup_wizard.build_config_dict(form)
+    assert result["camera_enabled"] is False
+    assert result["screen_enabled"] is False
+
+
+def test_build_config_dict_respects_explicit_camera_and_screen_flags():
+    form = {"gemini_api_key": "my-key", "camera_enabled": True, "screen_enabled": True}
+    result = setup_wizard.build_config_dict(form)
+    assert result["camera_enabled"] is True
+    assert result["screen_enabled"] is True
+
+
 def test_write_config_file_writes_valid_json(tmp_path):
     path = tmp_path / "config.json"
     config_dict = {"gemini_api_key": "k"}

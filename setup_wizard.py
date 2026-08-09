@@ -22,6 +22,8 @@ def build_config_dict(form_values: dict) -> dict:
         "smtp_port": int(form_values.get("smtp_port") or 465),
         "smtp_user": form_values.get("smtp_user", "").strip(),
         "smtp_app_password": form_values.get("smtp_app_password", "").strip(),
+        "camera_enabled": bool(form_values.get("camera_enabled", False)),
+        "screen_enabled": bool(form_values.get("screen_enabled", False)),
     }
 
 
@@ -57,11 +59,23 @@ def run_first_time_setup() -> None:
         root, text="Start TRON automatically when I log in", variable=autostart_var
     ).grid(row=6, column=0, columnspan=2, sticky="w", padx=8, pady=4)
 
+    camera_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(root, text="Enable camera access", variable=camera_var).grid(
+        row=7, column=0, columnspan=2, sticky="w", padx=8, pady=4
+    )
+
+    screen_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(root, text="Enable screen reading", variable=screen_var).grid(
+        row=8, column=0, columnspan=2, sticky="w", padx=8, pady=4
+    )
+
     def on_save():
         if not fields["gemini_api_key"].get().strip():
             messagebox.showerror("TRON setup", "A Gemini API key is required.")
             return
         form_values = {key: var.get() for key, var in fields.items()}
+        form_values["camera_enabled"] = camera_var.get()
+        form_values["screen_enabled"] = screen_var.get()
         config_dict = build_config_dict(form_values)
         write_config_file(config.CONFIG_PATH, config_dict)
         if autostart_var.get():
@@ -75,7 +89,7 @@ def run_first_time_setup() -> None:
         root.destroy()
 
     ttk.Button(root, text="Save & Start", command=on_save).grid(
-        row=7, column=0, columnspan=2, pady=10
+        row=9, column=0, columnspan=2, pady=10
     )
 
     root.mainloop()
