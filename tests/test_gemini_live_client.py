@@ -44,11 +44,15 @@ def _turn_complete_response():
 class FakeLiveSession:
     def __init__(self, responses):
         self.sent_audio = []
+        self.sent_video = []
         self.sent_tool_responses = []
         self._responses = responses
 
-    async def send_realtime_input(self, audio):
-        self.sent_audio.append(audio)
+    async def send_realtime_input(self, audio=None, video=None):
+        if audio is not None:
+            self.sent_audio.append(audio)
+        if video is not None:
+            self.sent_video.append(video)
 
     async def send_tool_response(self, function_responses):
         self.sent_tool_responses.append(function_responses)
@@ -111,6 +115,21 @@ def test_receive_yields_tool_call_events(monkeypatch):
     assert events == [
         {"type": "tool_call", "calls": [{"id": "call-1", "name": "open_target", "args": {"name": "notepad"}}]}
     ]
+
+
+def test_send_video_frame_forwards_jpeg_bytes(monkeypatch):
+    fake_session = FakeLiveSession([])
+    _connect(monkeypatch, fake_session)
+
+    async def run():
+        async with glc.GeminiLiveSession(
+            api_key="k", model_name="m", voice_name="Charon", system_instruction="be TRON"
+        ) as session:
+            await session.send_video_frame(b"\xff\xd8fake-jpeg-bytes")
+
+    asyncio.run(run())
+
+    assert len(fake_session.sent_video) == 1
 
 
 def test_send_tool_response_forwards_result(monkeypatch):

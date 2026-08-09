@@ -55,6 +55,11 @@ class GeminiLiveSession:
             audio=types.Blob(data=pcm_bytes, mime_type=f"audio/pcm;rate={sample_rate}")
         )
 
+    async def send_video_frame(self, jpeg_bytes: bytes) -> None:
+        await self._session.send_realtime_input(
+            video=types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
+        )
+
     async def send_tool_response(self, call_id: str, name: str, result: str) -> None:
         await self._session.send_tool_response(
             function_responses=[types.FunctionResponse(id=call_id, name=name, response={"result": result})]
