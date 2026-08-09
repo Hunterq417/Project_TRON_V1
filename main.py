@@ -7,7 +7,7 @@ import config as config_module
 import setup_wizard
 from orb_ui import OrbUI
 from state_manager import TronStateMachine
-from wake_trigger import HotkeyTrigger
+from wake_trigger import HotkeyTrigger, OpenWakeWordTrigger
 from tray_ui import TrayUI
 
 
@@ -18,11 +18,9 @@ def main() -> None:
     cfg = config_module.load_config()
     persona_text = config_module.resolve_path(cfg.persona_path).read_text(encoding="utf-8")
 
-    if cfg.wake_mode != "hotkey":
-        raise NotImplementedError(
-            f'wake_mode="{cfg.wake_mode}" is not wired up yet — only "hotkey" is. '
-            "See docs/train_wakeword.md to add a trained wake-word model, then "
-            "extend wake_trigger.py with an OpenWakeWordTrigger."
+    if cfg.wake_mode not in ("hotkey", "openwakeword"):
+        raise ValueError(
+            f'unknown wake_mode "{cfg.wake_mode}" in config.json — use "hotkey" or "openwakeword"'
         )
 
     orb = OrbUI()
@@ -45,12 +43,19 @@ def main() -> None:
         cfg=cfg,
     )
 
-    trigger = HotkeyTrigger(cfg.hotkey, on_trigger=machine.trigger)
+    if cfg.wake_mode == "hotkey":
+        trigger = HotkeyTrigger(cfg.hotkey, on_trigger=machine.trigger)
+        ready_message = f'TRON is running. Press {cfg.hotkey} to talk. Quit from the tray icon menu.'
+    else:
+        model_path = str(config_module.resolve_path(cfg.wakeword_model_path))
+        trigger = OpenWakeWordTrigger(model_path, on_trigger=machine.trigger)
+        ready_message = 'TRON is running. Say "hey tron" to talk. Quit from the tray icon menu.'
+
     trigger.start()
     tray.start()
     orb.start()
 
-    print(f'TRON is running. Press {cfg.hotkey} to talk. Quit from the tray icon menu.')
+    print(ready_message)
     try:
         while True:
             time.sleep(1)
@@ -58,7 +63,7 @@ def main() -> None:
         _quit(trigger, tray)
 
 
-def _quit(trigger: HotkeyTrigger, tray: TrayUI) -> None:
+def _quit(trigger, tray: TrayUI) -> None:
     trigger.stop()
     tray.stop()
     sys.exit(0)
