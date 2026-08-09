@@ -38,6 +38,8 @@ class Config:
     smtp_port: int
     smtp_user: str
     smtp_app_password: str
+    camera_enabled: bool
+    screen_enabled: bool
 
 
 def load_config() -> Config:
@@ -60,4 +62,6 @@ def load_config() -> Config:
         smtp_port=data.get("smtp_port", 465),
         smtp_user=data.get("smtp_user", ""),
         smtp_app_password=data.get("smtp_app_password", ""),
+        camera_enabled=data.get("camera_enabled", False),
+        screen_enabled=data.get("screen_enabled", False),
     )

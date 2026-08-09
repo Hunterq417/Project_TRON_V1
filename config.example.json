@@ -10,5 +10,7 @@
   "smtp_host": "smtp.gmail.com",
   "smtp_port": 465,
   "smtp_user": "YOUR_EMAIL@gmail.com",
-  "smtp_app_password": "YOUR_16_CHAR_APP_PASSWORD"
+  "smtp_app_password": "YOUR_16_CHAR_APP_PASSWORD",
+  "camera_enabled": false,
+  "screen_enabled": false
 }

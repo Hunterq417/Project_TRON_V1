@@ -34,6 +34,30 @@ def test_load_config_missing_file_raises(tmp_path, monkeypatch):
         config_module.load_config()
 
 
+def test_load_config_defaults_camera_and_screen_to_disabled(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({"gemini_api_key": "k"}))
+    monkeypatch.setattr(config_module, "CONFIG_PATH", cfg_path)
+
+    cfg = config_module.load_config()
+
+    assert cfg.camera_enabled is False
+    assert cfg.screen_enabled is False
+
+
+def test_load_config_respects_explicit_camera_and_screen_flags(tmp_path, monkeypatch):
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({
+        "gemini_api_key": "k", "camera_enabled": True, "screen_enabled": True,
+    }))
+    monkeypatch.setattr(config_module, "CONFIG_PATH", cfg_path)
+
+    cfg = config_module.load_config()
+
+    assert cfg.camera_enabled is True
+    assert cfg.screen_enabled is True
+
+
 def test_app_dir_dev_mode(monkeypatch):
     monkeypatch.setattr(config_module.sys, "frozen", False, raising=False)
     assert config_module.app_dir() == Path(config_module.__file__).parent
