@@ -88,3 +88,29 @@ def test_send_email_uses_cfg_smtp_settings(monkeypatch):
         smtp_host="smtp.example.com", smtp_port=465,
         smtp_user="me@example.com", smtp_app_password="pw",
     )
+
+
+def test_recall_activity_returns_context(monkeypatch):
+    monkeypatch.setattr(tools.memory, "recent_context", lambda n=10: "Recent activity:\n- did stuff")
+
+    result = tools.TOOL_DISPATCH["recall_activity"]({}, None)
+
+    assert "did stuff" in result
+
+
+def test_recall_activity_handles_empty_log(monkeypatch):
+    monkeypatch.setattr(tools.memory, "recent_context", lambda n=10: "")
+
+    result = tools.TOOL_DISPATCH["recall_activity"]({}, None)
+
+    assert "nothing logged" in result.lower()
+
+
+def test_forget_recent_activity_clears_log(monkeypatch):
+    fake_clear = MagicMock()
+    monkeypatch.setattr(tools.memory, "clear", fake_clear)
+
+    result = tools.TOOL_DISPATCH["forget_recent_activity"]({}, None)
+
+    fake_clear.assert_called_once()
+    assert "cleared" in result.lower()

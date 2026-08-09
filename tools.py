@@ -5,6 +5,7 @@ import webbrowser
 import app_index
 import email_client
 import media_control
+import memory
 
 _APP_INDEX_CACHE = None
 
@@ -60,6 +61,18 @@ def _send_email(args, cfg):
     )
 
 
+def _recall_activity(args, cfg):
+    context = memory.recent_context()
+    if not context:
+        return "nothing logged yet, sir"
+    return context
+
+
+def _forget_recent_activity(args, cfg):
+    memory.clear()
+    return "recent activity log cleared, sir"
+
+
 TOOL_DISPATCH = {
     "open_target": _open_target,
     "web_search": _web_search,
@@ -69,6 +82,8 @@ TOOL_DISPATCH = {
     "media_seek": _media_seek,
     "draft_email": _draft_email,
     "send_email": _send_email,
+    "recall_activity": _recall_activity,
+    "forget_recent_activity": _forget_recent_activity,
 }
 
 TOOL_DECLARATIONS = [
@@ -157,5 +172,18 @@ TOOL_DECLARATIONS = [
             },
             "required": ["to", "subject", "body"],
         },
+    },
+    {
+        "name": "recall_activity",
+        "description": (
+            "Get a summary of recent actions TRON has taken (apps opened, searches, "
+            "emails, etc.) to answer questions like 'what have you been up to'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "forget_recent_activity",
+        "description": "Clear TRON's recent activity log. Use when the user explicitly asks to forget or clear recent activity.",
+        "parameters": {"type": "object", "properties": {}},
     },
 ]
