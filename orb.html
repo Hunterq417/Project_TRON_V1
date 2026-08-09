@@ -142,6 +142,29 @@ function twinkle(system, t, speedMul) {
   points.geometry.attributes.color.needsUpdate = true;
 }
 
+// --- speaking "pop": a snappy scale burst on a speech-like cadence, distinct
+// from the smooth continuous twinkle/rotation. Each pop is a fast rise +
+// settle (not a symmetric sine), so it reads as a punchy beat, not a wobble.
+const POP_DURATION = 0.16;
+let nextPopAt = 0;
+let popStartedAt = -1;
+
+function updatePop(t) {
+  if (currentState !== 'speaking') {
+    nextPopAt = t; // ready to pop again the instant speaking resumes
+    return 1;
+  }
+  if (t >= nextPopAt) {
+    popStartedAt = t;
+    nextPopAt = t + 0.32 + Math.random() * 0.22; // 320-540ms — a speech-like cadence, not a metronome
+  }
+  const elapsed = t - popStartedAt;
+  if (popStartedAt < 0 || elapsed > POP_DURATION) return 1;
+  const p = elapsed / POP_DURATION;
+  const easeOut = 1 - Math.pow(1 - p, 3);
+  return 1 + 0.16 * Math.sin(easeOut * Math.PI); // rises fast, settles back to 1 by POP_DURATION
+}
+
 const clockStart = performance.now();
 function animate() {
   requestAnimationFrame(animate);
@@ -152,13 +175,15 @@ function animate() {
   const haloPulse = (currentState === 'speaking' || currentState === 'acting')
     ? 1 + 0.15 * Math.sin(t * 6)
     : 1;
+  const pop = updatePop(t);
 
   twinkle(shellSystem, t, speedMul);
   twinkle(starSystem, t, speedMul * 0.8);
 
   sphereGroup.rotation.y = t * 0.15 * speedMul; // slow continuous turn — sells the sphere's depth
   sphereGroup.rotation.x = Math.sin(t * 0.2) * 0.08; // gentle wobble on the other axis
-  halo.scale.setScalar(3.2 * haloPulse);
+  sphereGroup.scale.setScalar(pop);
+  halo.scale.setScalar(3.2 * haloPulse * pop);
 
   renderer.render(scene, camera);
 }
