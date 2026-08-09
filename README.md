@@ -19,6 +19,10 @@ A personal voice assistant. All 6 sub-projects complete — see
 7. Press `Ctrl+Alt+T` (configurable in `config.json`) to talk to TRON. Quit
    from the system tray icon.
 
+By default TRON listens for a hotkey, not a spoken wake word — training a
+real "hey tron" model is a separate offline step. See
+[Upgrading to the "hey tron" wake word](#upgrading-to-the-hey-tron-wake-word) below.
+
 ## Running the packaged .exe
 
 Build `TRON.exe` per `docs/build_exe.md`, or if you already have one: just
@@ -74,6 +78,10 @@ and scans) is visible by asking "what have you been up to."
 
 `.venv\Scripts\pytest`
 
-## Upgrading to a real "TRON" wake word (no hotkey)
+## Upgrading to the "hey tron" wake word
 
-See `docs/train_wakeword.md`.
+`OpenWakeWordTrigger` (continuous listening, no hotkey) is fully built and
+tested — it just needs a trained `models/tron.onnx` file, which is a
+separate offline training step (Colab notebook, not application code). See
+`docs/train_wakeword.md` for the exact steps and how to switch
+`config.json`'s `wake_mode` over once you have it.
