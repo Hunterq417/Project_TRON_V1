@@ -194,6 +194,34 @@ def test_default_session_factory_injects_recent_activity_context(monkeypatch):
     assert "did stuff" in captured["system_instruction"]
 
 
+def test_default_session_factory_includes_time_context(monkeypatch):
+    class FakeDateTime(sm.datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 8, 10, 21, 30)  # 9:30 PM
+
+    monkeypatch.setattr(sm.datetime, "datetime", FakeDateTime)
+    monkeypatch.setattr(memory, "recent_context", lambda n=10: "")
+
+    captured = {}
+
+    class FakeGeminiLiveSession:
+        def __init__(self, api_key, model_name, voice_name, system_instruction, tools=None):
+            captured["system_instruction"] = system_instruction
+
+    monkeypatch.setattr(sm, "GeminiLiveSession", FakeGeminiLiveSession)
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+    )
+
+    machine._session_factory()
+
+    assert "Current time:" in captured["system_instruction"]
+    assert "09:30 PM" in captured["system_instruction"]
+
+
 def test_look_at_screen_sends_video_frame_and_acks(monkeypatch):
     audio = FakeAudio()
     audio._mic_chunks = []

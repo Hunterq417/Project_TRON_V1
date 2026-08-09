@@ -1,5 +1,6 @@
 # state_manager.py
 import asyncio
+import datetime
 import time
 from enum import Enum, auto
 
@@ -8,6 +9,13 @@ import perception
 import tools
 from audio_io import DuplexAudio, SAMPLE_RATE_IN, rms_level
 from gemini_live_client import GeminiLiveSession
+
+
+def _time_context() -> str:
+    """Gemini has no innate sense of wall-clock time — this is how the persona's
+    time-of-day greeting behavior (persona.txt) actually knows what time it is."""
+    now = datetime.datetime.now()
+    return f"Current time: {now.strftime('%A, %B %d, %Y, %I:%M %p')}"
 
 
 class State(Enum):
@@ -49,7 +57,7 @@ class TronStateMachine:
         self._session_factory = session_factory or (
             lambda: GeminiLiveSession(
                 self._api_key, self._model_name, self._voice_name,
-                self._persona_text + "\n\n" + memory.recent_context(),
+                self._persona_text + "\n\n" + _time_context() + "\n\n" + memory.recent_context(),
                 tools=tools.declarations_for(self._cfg),
             )
         )
