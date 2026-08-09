@@ -10,6 +10,7 @@ _COLORS = {
     "listening": (66, 133, 244),  # blue — mic capturing your speech
     "thinking": (255, 193, 7),    # amber — paused/waiting on Gemini
     "speaking": (52, 199, 89),    # green — TRON's reply is playing
+    "acting": (155, 89, 182),     # purple — a tool is actively running
     "error": (220, 53, 69),       # red — network/API failure this turn
 }
 
