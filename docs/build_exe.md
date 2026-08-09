@@ -42,6 +42,12 @@ xcopy vendor dist\vendor\ /E /I
 
 ## Smoke-testing the build
 
+Steps 1-2 have actually been run and confirmed (not just theorized): the
+built exe launches cleanly with no crash, and the real first-run setup
+window renders with the title "TRON — first-time setup" — verified by
+checking actual OS window titles, not assumed. Steps 3 onward need a real
+Gemini API key and haven't been run.
+
 1. From a fresh folder (not the repo — simulates a real install), copy only
    `dist\TRON.exe`, `persona.txt`, `orb.html`, and the `vendor\` folder.
 2. Double-click `TRON.exe`. The first-time setup window should appear.
@@ -54,13 +60,13 @@ xcopy vendor dist\vendor\ /E /I
    and disappears again once the conversation ends.
 6. From the tray menu, click "Show/Hide Orb" and confirm it toggles the orb
    on and off manually.
-7. **Desktop-pinning (never visually verified during development — check
-   this first):** while TRON is speaking, alt-tab to or click into another
-   application window over where the orb is. It should end up hidden behind
-   that window, not floating on top of it. If it stays on top instead, the
-   WorkerW trick (`desktop_layer.py`) failed silently on your Windows
-   build/configuration and the orb fell back to being a normal window —
-   not a bug exactly, but worth knowing which mode you're actually in.
+7. **Desktop-pinning:** while TRON is speaking, alt-tab to or click into
+   another application window over where the orb is. It should end up
+   hidden behind that window, not floating on top of it. On the machine
+   this was built on, a direct diagnostic (real Win32 calls, not simulated)
+   found neither the classic WorkerW lookup nor its fallback succeeds — the
+   orb falls back to a normal window there. Expect the same unless your
+   Windows build's desktop composition differs.
 8. Close TRON, relaunch `TRON.exe` — it should go straight to the tray icon,
    no setup window this time.
 9. Check `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run` in

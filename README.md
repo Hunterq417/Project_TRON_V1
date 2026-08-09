@@ -47,10 +47,18 @@ desktop layer — behind every application window, like a live wallpaper —
 using the same undocumented Windows trick apps like Wallpaper Engine use.
 This can fail on some Windows builds/configurations; when it does, the orb
 just falls back to being a normal (not-always-on-top) window instead of
-erroring. **This has been verified at the code level (unit tests + live
-Win32 API calls) but never visually confirmed rendering behind icons** — the
-environment this was built in couldn't composite a real desktop session to
-check. Look at it on your own machine before relying on it.
+erroring.
+
+**On this machine specifically, it doesn't pin** — diagnosed directly against
+this real desktop (not simulated): the classic lookup (find the WorkerW
+sibling of the window hosting the desktop icons) and the fallback (the
+WorkerW right after Progman) both come back empty here, most likely because
+this Windows build's icon host is `SHELLDLL_DefView` sitting straight under
+`Progman` with no freshly-spawned `WorkerW` at all. The orb still works —
+centered, color-coded, audio-reactive — it just won't be *behind* other
+windows on this PC; it'll behave like a normal window instead. This may
+differ on other machines/Windows builds. `pin_to_desktop()` never raises
+either way, so this degrades quietly rather than breaking anything.
 
 ## Tray icon / orb status colors
 
