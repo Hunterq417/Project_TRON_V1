@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin:0; padding:0; background: transparent; overflow: hidden; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const STATE_COLORS = {
+  idle:      [235,235,235],
+  listening: [66,133,244],
+  thinking:  [255,193,7],
+  speaking:  [52,199,89],
+  acting:    [155,89,182],
+  error:     [220,53,69],
+};
+let currentState = 'idle';
+function setState(name) { if (STATE_COLORS[name]) currentState = name; }
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+const N = 220;
+const points = [];
+for (let i = 0; i < N; i++) {
+  const phi = Math.acos(1 - 2 * (i + 0.5) / N);
+  const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+  points.push({
+    x: Math.sin(phi) * Math.cos(theta),
+    y: Math.sin(phi) * Math.sin(theta),
+    z: Math.cos(phi),
+  });
+}
+
+let angle = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const [r, g, b] = STATE_COLORS[currentState];
+  const cx = w / 2, cy = h / 2;
+  const radius = Math.min(w, h) * 0.38;
+
+  const speed = currentState === 'idle' ? 0.002 : currentState === 'error' ? 0.02 : 0.008;
+  angle += speed;
+
+  const pulse = (currentState === 'speaking' || currentState === 'acting')
+    ? 1 + 0.08 * Math.sin(Date.now() / 150)
+    : 1;
+
+  const projected = points.map(p => {
+    const x = p.x * Math.cos(angle) - p.z * Math.sin(angle);
+    const z = p.x * Math.sin(angle) + p.z * Math.cos(angle);
+    const y = p.y;
+    const scale = 1.6 / (1.6 + z);
+    return {
+      sx: cx + x * radius * scale * pulse,
+      sy: cy + y * radius * scale * pulse,
+      z, scale,
+    };
+  }).sort((a, b) => a.z - b.z);
+
+  for (const p of projected) {
+    const alpha = 0.25 + 0.6 * ((p.z + 1) / 2);
+    const size = 1.2 * p.scale + 0.6;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.9)`;
+    ctx.shadowBlur = 8 * p.scale;
+    ctx.arc(p.sx, p.sy, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+animate();
+</script>
+</body>
+</html>
