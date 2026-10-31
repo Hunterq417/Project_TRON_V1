@@ -1,16 +1,30 @@
 {
-  "gemini_api_key": "YOUR_GEMINI_API_KEY_HERE",
-  "wake_mode": "hotkey",
+  "brain": "local",
+  "local_model": "qwen3.5:4b",
+  "local_voice": "david",
+  "local_brain_enabled": true,
+
+  "gemini_api_key": "YOUR_GEMINI_API_KEY_HERE (only for Gemini mode)",
+  "model_name": "gemini-3.1-flash-live-preview",
+  "voice_name": "Orus",
+  "openrouter_api_key": "",
+
+  "wake_mode": "openwakeword",
   "hotkey": "ctrl+alt+t",
   "wakeword_model_path": "models/tron.onnx",
+  "mic_device": null,
+  "speaker_device": null,
   "persona_path": "persona.txt",
   "silence_timeout_s": 45.0,
-  "voice_name": "Orus",
-  "model_name": "gemini-3.1-flash-live-preview",
+  "ui_model": "halo-ring",
+
+  "camera_enabled": false,
+  "screen_enabled": false,
+  "memory_enabled": true,
+  "brain_debug": false,
+
   "smtp_host": "smtp.gmail.com",
   "smtp_port": 465,
   "smtp_user": "YOUR_EMAIL@gmail.com",
-  "smtp_app_password": "YOUR_16_CHAR_APP_PASSWORD",
-  "camera_enabled": false,
-  "screen_enabled": false
+  "smtp_app_password": "YOUR_16_CHAR_APP_PASSWORD"
 }

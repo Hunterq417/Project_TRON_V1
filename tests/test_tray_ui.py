@@ -1,6 +1,7 @@
 # tests/test_tray_ui.py
 from unittest.mock import MagicMock
 
+import config
 import tray_ui
 import state_manager as sm
 
@@ -15,7 +16,8 @@ def test_on_state_change_updates_icon_and_title(monkeypatch):
     ui = tray_ui.TrayUI(quit_callback=MagicMock())
     ui.on_state_change(sm.State.LISTENING)
 
-    assert fake_icon.title == "TRON: listening"
+    # Derived, not hard-coded, so bumping APP_VERSION doesn't fail the suite.
+    assert fake_icon.title == f"{config.APP_LABEL}: listening"
     assert fake_icon.icon is not None
 
 

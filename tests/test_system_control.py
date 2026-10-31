@@ -48,7 +48,9 @@ def test_cancel_shutdown_success(monkeypatch):
 
     result = system_control.cancel_shutdown({}, None)
 
-    fake_run.assert_called_once_with(["shutdown", "/a"], check=True, capture_output=True, text=True)
+    fake_run.assert_called_once_with(["shutdown", "/a"], check=True, capture_output=True, text=True,
+        stdin=system_control.subprocess.DEVNULL,
+        creationflags=system_control._CREATE_NO_WINDOW)
     assert "cancelled" in result.lower()
 
 

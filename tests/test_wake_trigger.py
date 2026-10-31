@@ -16,7 +16,14 @@ def test_start_registers_hotkey_and_stop_removes_it(monkeypatch):
     trigger = wake_trigger.HotkeyTrigger("ctrl+alt+t", on_trigger)
 
     trigger.start()
-    fake_keyboard.add_hotkey.assert_called_once_with("ctrl+alt+t", on_trigger)
+    fake_keyboard.add_hotkey.assert_called_once_with("ctrl+alt+t", trigger._dispatch)
+
+    # The callback must hand off to a thread, not run the conversation inline.
+    trigger._dispatch()
+    for t in __import__("threading").enumerate():
+        if t is not __import__("threading").current_thread() and t.daemon:
+            t.join(timeout=1)
+    on_trigger.assert_called_once()
 
     trigger.stop()
     fake_keyboard.remove_hotkey.assert_called_once_with("handle-123")
@@ -141,3 +148,69 @@ def test_openwakeword_trigger_resume_reenables_listening(tmp_path, monkeypatch):
     trigger.resume()
 
     assert trigger._listening is True
+
+
+def test_openwakeword_trigger_uses_the_configured_device(tmp_path, monkeypatch):
+    """Same reason as DuplexAudio: the wake word is deaf if it opens the wrong
+    microphone, and it looks like a model failure rather than a device one."""
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock())
+    fake_sd = MagicMock()
+    monkeypatch.setattr(wake_trigger, "sd", fake_sd)
+
+    monkeypatch.setattr(wake_trigger.audio_io, "input_devices",
+                        lambda: [(9, "HyperX Cloud II", 1)])
+
+    trigger = wake_trigger.OpenWakeWordTrigger(
+        str(model_path), on_trigger=MagicMock(), device="HyperX"
+    )
+    trigger.start()
+
+    # Same resolution as DuplexAudio: the wake word and the conversation must
+    # end up on the same physical microphone.
+    assert fake_sd.InputStream.call_args.kwargs["device"] == 9
+
+
+def test_openwakeword_trigger_defaults_to_the_system_device(tmp_path, monkeypatch):
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock())
+    fake_sd = MagicMock()
+    monkeypatch.setattr(wake_trigger, "sd", fake_sd)
+
+    wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock()).start()
+
+    assert fake_sd.InputStream.call_args.kwargs["device"] is None
+
+
+def test_on_score_receives_level_and_score_for_every_block(tmp_path, monkeypatch):
+    """Backs --test-mic. Without this the only way to watch the meter was to
+    monkeypatch the callback, which meant the diagnostic tested a different code
+    path than the one that actually runs."""
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    fake_model = MagicMock()
+    fake_model.predict.return_value = {"tron": 0.42}
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock(return_value=fake_model))
+
+    seen = []
+    trigger = wake_trigger.OpenWakeWordTrigger(
+        str(model_path), on_trigger=MagicMock(), on_score=lambda lvl, s: seen.append((lvl, s))
+    )
+    block = np.array([100, -100, 100, -100], dtype=np.int16)
+    trigger._on_block(block.tobytes(), 4, None, None)
+
+    assert seen == [(100.0, 0.42)]
+
+
+def test_on_score_is_optional(tmp_path, monkeypatch):
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    fake_model = MagicMock()
+    fake_model.predict.return_value = {"tron": 0.1}
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock(return_value=fake_model))
+
+    trigger = wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock())
+    block = np.array([1, 2], dtype=np.int16)
+    trigger._on_block(block.tobytes(), 2, None, None)  # must not raise

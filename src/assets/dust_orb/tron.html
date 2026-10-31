@@ -1,0 +1,19 @@
+<!doctype html>
+<!-- TRON's Dust Orb face: the Ship Notes dust-orb v2 component (MIT, see LICENSE), driven by TRON's state.
+     orb_ui sends states and voice levels; dust_orb.py calls window.tron(state, level). -->
+<html><head><meta charset="utf-8"><title>TRON</title>
+<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}
+dust-orb{display:block;width:100vw;height:100vh;cursor:grab}</style></head>
+<body><dust-orb id="orb" aria-label="TRON"></dust-orb>
+<script src="vendor/three-r180.js"></script><script src="vendor/motion.js"></script>
+<script src="material.js"></script><script src="dust-orb.js"></script>
+<script>
+  const STATES = {idle: 'idle', listening: 'listening', thinking: 'thinking', acting: 'thinking',
+                  speaking: 'speaking', dictating: 'listening', error: 'agitated'};
+  window.tron = (state, level) => {
+    const orb = document.getElementById('orb');
+    if (!orb.setState) return;
+    if (state) orb.setState(STATES[state] || 'idle');
+    if (level !== undefined && level !== null) orb.setVoiceLevel(level);
+  };
+</script></body></html>

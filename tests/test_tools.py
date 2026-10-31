@@ -8,20 +8,28 @@ import tools
 def test_every_declaration_has_a_matching_dispatch_entry():
     declared_names = {d["name"] for d in tools.TOOL_DECLARATIONS}
     dispatched_names = set(tools.TOOL_DISPATCH.keys())
-    assert declared_names == dispatched_names
+    # control tools (start_dictation) are handled by the state machine, not the dispatch table
+    assert declared_names == dispatched_names | tools.CONTROL_TOOL_NAMES
 
 
-def test_open_target_uses_direct_launch_when_available(monkeypatch):
+def test_open_target_uses_direct_launch_as_a_last_resort(monkeypatch):
+    """Direct launch runs only after the Windows app list and the shortcut
+    index. It used to run first, which was wrong twice over: os.startfile
+    succeeds for some bare names without starting anything, and going first let
+    it swallow requests the app list would have answered correctly."""
+    monkeypatch.setattr(tools.app_index, "resolve_start_app", lambda name: None)
+    monkeypatch.setattr(tools.app_index, "resolve", lambda name, index: None)
     fake_try_direct = MagicMock(return_value=True)
     monkeypatch.setattr(tools.app_index, "try_direct_launch", fake_try_direct)
 
-    result = tools.TOOL_DISPATCH["open_target"]({"name": "notepad"}, None)
+    result = tools.TOOL_DISPATCH["open_target"]({"name": "regedit"}, None)
 
-    fake_try_direct.assert_called_once_with("notepad")
-    assert "notepad" in result.lower()
+    fake_try_direct.assert_called_once_with("regedit")
+    assert "regedit" in result.lower()
 
 
 def test_open_target_found(monkeypatch):
+    monkeypatch.setattr(tools.app_index, "resolve_start_app", lambda name: None)
     monkeypatch.setattr(tools.app_index, "try_direct_launch", lambda name: False)
     monkeypatch.setattr(tools, "_APP_INDEX_CACHE", {"chrome": Path("C:/x/chrome.lnk")})
     fake_launch = MagicMock()
@@ -34,6 +42,7 @@ def test_open_target_found(monkeypatch):
 
 
 def test_open_target_not_found(monkeypatch):
+    monkeypatch.setattr(tools.app_index, "resolve_start_app", lambda name: None)
     monkeypatch.setattr(tools.app_index, "try_direct_launch", lambda name: False)
     monkeypatch.setattr(tools, "_APP_INDEX_CACHE", {"notepad": Path("C:/x/notepad.lnk")})
 
@@ -203,3 +212,76 @@ def test_cancel_shutdown_delegates(monkeypatch):
 
     fake_cancel.assert_called_once_with({}, None)
     assert result == "cancelled, sir"
+
+
+def test_open_target_prefers_the_windows_app_list(monkeypatch):
+    """The regression this exists for: "open the calculator" reported that it
+    could not be located, because Calculator is a Store app with no .lnk and the
+    shortcut index was the only thing consulted."""
+    monkeypatch.setattr(tools.app_index, "resolve_start_app", lambda n: "Calc!App")
+    launched = []
+    monkeypatch.setattr(tools.app_index, "launch_start_app", lambda i: launched.append(i))
+    monkeypatch.setattr(tools.app_index, "resolve", lambda n, i: None)
+
+    assert "calculator" in tools.TOOL_DISPATCH["open_target"]({"name": "calculator"}, None)
+    assert launched == ["Calc!App"]
+
+
+def test_open_target_falls_back_to_shortcuts_then_direct_launch(monkeypatch):
+    """try_direct_launch has to be last: os.startfile succeeds for some bare
+    names without starting anything, so trying it first reported success for a
+    window that never appeared."""
+    order = []
+    monkeypatch.setattr(tools.app_index, "resolve_start_app", lambda n: order.append("apps"))
+    monkeypatch.setattr(tools.app_index, "resolve", lambda n, i: order.append("shortcuts"))
+    monkeypatch.setattr(tools.app_index, "try_direct_launch",
+                        lambda n: order.append("direct") or True)
+
+    tools.TOOL_DISPATCH["open_target"]({"name": "regedit"}, None)
+
+    assert order == ["apps", "shortcuts", "direct"]
+
+
+def test_open_target_reports_honestly_when_nothing_matches(monkeypatch):
+    monkeypatch.setattr(tools.app_index, "resolve_start_app", lambda n: None)
+    monkeypatch.setattr(tools.app_index, "resolve", lambda n, i: None)
+    monkeypatch.setattr(tools.app_index, "try_direct_launch", lambda n: False)
+
+    reply = tools.TOOL_DISPATCH["open_target"]({"name": "nonexistent app"}, None)
+    assert "could not find" in reply
+
+
+def test_remember_fact_stores_what_the_model_was_told(monkeypatch):
+    recorded = []
+    monkeypatch.setattr(tools.memory, "remember",
+                        lambda kind, key, value, status="": recorded.append((kind, key, value, status)))
+
+    reply = tools.TOOL_DISPATCH["remember_fact"](
+        {"kind": "preference", "key": "browser", "value": "Firefox"}, None)
+
+    assert recorded == [("preference", "browser", "Firefox", "")]
+    assert reply == "noted, sir"
+
+
+def test_forget_fact_says_so_when_there_was_nothing_to_forget(monkeypatch):
+    """Otherwise TRON claims to have forgotten something it never knew, and the
+    user believes a fact was removed when it was not."""
+    monkeypatch.setattr(tools.memory, "forget", lambda key, kind="": False)
+    assert "don't have anything" in tools.TOOL_DISPATCH["forget_fact"]({"key": "nope"}, None)
+
+    monkeypatch.setattr(tools.memory, "forget", lambda key, kind="": True)
+    assert tools.TOOL_DISPATCH["forget_fact"]({"key": "browser"}, None) == "forgotten, sir"
+
+
+def test_recalling_activity_does_not_leak_the_user_dossier(monkeypatch):
+    """"What have you been up to?" asks about TRON's ACTIONS. Long-term facts
+    are about the user, and are kept in a separate block for exactly this
+    reason — this test fails if the two are ever merged."""
+    monkeypatch.setattr(tools.memory, "recent_context", lambda: "- opened notepad")
+    monkeypatch.setattr(tools.memory, "long_term_context",
+                        lambda: "Who the user is:\n- name: Shivansh")
+
+    reply = tools.TOOL_DISPATCH["recall_activity"]({}, None)
+
+    assert "notepad" in reply
+    assert "Shivansh" not in reply

@@ -1,5 +1,10 @@
 # tests/test_state_manager.py
+import asyncio
+import threading
+import time
 from unittest.mock import MagicMock
+
+import numpy as np
 
 import memory
 import perception
@@ -56,6 +61,9 @@ class FakeSession:
     async def receive(self):
         for event in self._events:
             yield event
+        # A live connection stays open after its last message; only hanging up
+        # ends receive(), and the state machine now treats that as the end.
+        await asyncio.Event().wait()
 
 
 def test_trigger_runs_full_state_cycle_with_distinct_colors_per_phase():
@@ -339,4 +347,223 @@ def test_on_audio_level_defaults_to_a_no_op():
 
     machine.trigger()  # must not raise with no on_audio_level provided
 
+    assert machine.state is sm.State.IDLE
+
+
+def _pcm(amplitude, n=1600):
+    return np.full(n, amplitude, dtype=np.int16).tobytes()
+
+
+def _finishes_within(machine, seconds):
+    """Runs a conversation on its own thread and reports whether it ended.
+
+    trigger() blocks its caller (the app gives it a thread of its own), so a
+    conversation that never ends would hang the whole suite rather than fail.
+    """
+    thread = threading.Thread(target=machine.trigger, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    return not thread.is_alive()
+
+
+class ConstantAudio(FakeAudio):
+    """A microphone that never stops producing blocks — i.e. any real one."""
+
+    def __init__(self, amplitude):
+        super().__init__()
+        self._amplitude = amplitude
+
+    def drain_mic(self):
+        return _pcm(self._amplitude)
+
+
+def test_a_quiet_microphone_lets_the_conversation_end():
+    """Regression: the silence timeout reset on *any* mic data, and a live mic
+    always produces data, so it never fired once. Conversations ran until the
+    process died, and because the wake trigger stays disabled for the duration,
+    "hey tron" worked exactly once per launch."""
+    audio = ConstantAudio(amplitude=3)  # room tone, far below speech
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="v", persona_text="p",
+        silence_timeout_s=0.3, audio=audio,
+        session_factory=lambda: FakeSession(events=[]),
+    )
+
+    assert _finishes_within(machine, 8), "conversation never ended on a quiet mic"
+    assert machine.state is sm.State.IDLE
+    assert audio.stopped is True
+
+
+def test_quiet_audio_still_reaches_gemini():
+    """Gemini runs its own turn detection and needs an unbroken stream, so quiet
+    blocks must still be sent — they just must not count as activity."""
+    audio = ConstantAudio(amplitude=3)
+    session = FakeSession(events=[])
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="v", persona_text="p",
+        silence_timeout_s=0.3, audio=audio, session_factory=lambda: session,
+    )
+
+    _finishes_within(machine, 8)
+
+    assert session.sent_audio, "quiet audio should still be streamed to Gemini"
+
+
+def test_loud_audio_alone_no_longer_holds_the_conversation_open():
+    """Music playing near the mic is loud, but it isn't the user talking. Loudness used to count as
+    activity, and a conversation with Spotify playing never ended — nor was it ever logged."""
+    audio = ConstantAudio(amplitude=6000)  # loud: music, not words
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="v", persona_text="p",
+        silence_timeout_s=0.4, audio=audio,
+        session_factory=lambda: FakeSession(events=[]),
+    )
+    assert _finishes_within(machine, 3.0), "only transcribed words should keep it open"
+
+
+def test_transcribed_words_hold_the_conversation_open():
+    """The other half of the rule: someone actually talking keeps it alive past the silence timeout."""
+    class Chatty(FakeSession):
+        async def receive(self):
+            import asyncio
+            for _ in range(8):   # words keep arriving for ~1.6s, four times the timeout
+                yield {"type": "transcript", "role": "user", "text": "and another thing "}
+                await asyncio.sleep(0.2)
+            await asyncio.Event().wait()
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="v", persona_text="p",
+        silence_timeout_s=0.4, audio=FakeAudio(), session_factory=lambda: Chatty(),
+    )
+    assert not _finishes_within(machine, 1.2), "speech should have kept the conversation open"
+    machine._silence_timeout_s = 0.0  # let the daemon thread wind down
+
+
+
+def test_a_conversation_records_what_was_said():
+    """Before transcripts were surfaced, a finished conversation left no trace
+    of its content at all — only which tools it happened to call. Nothing could
+    be summarised or remembered from that."""
+    ended = []
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        audio=FakeAudio(),
+        on_conversation_end=ended.append,
+        session_factory=lambda: FakeSession([
+            {"type": "transcript", "role": "user", "text": "what is"},
+            {"type": "transcript", "role": "user", "text": " the date"},
+            {"type": "transcript", "role": "assistant", "text": "It's Friday, sir."},
+            {"type": "turn_complete"},
+        ]),
+    )
+
+    machine.trigger()
+
+    assert machine.last_turns == [
+        {"role": "user", "text": "what is the date"},
+        {"role": "assistant", "text": "It's Friday, sir."},
+    ]
+    assert ended == [machine.last_turns]
+
+
+def test_a_conversation_that_errors_still_records_what_was_said():
+    """A session that drops mid-way still happened, and what was said before it
+    broke is exactly the context needed to pick the thread back up."""
+    class ExplodingSession(FakeSession):
+        async def receive(self):
+            yield {"type": "transcript", "role": "user", "text": "remind me about the deploy"}
+            raise RuntimeError("connection dropped")
+
+    ended = []
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        audio=FakeAudio(),
+        on_conversation_end=ended.append,
+        session_factory=ExplodingSession,
+    )
+
+    machine.trigger()
+
+    assert ended == [[{"role": "user", "text": "remind me about the deploy"}]]
+
+
+def test_a_failing_end_hook_never_breaks_the_conversation():
+    """Saving memory is a side errand. If it throws, the conversation must still
+    finish cleanly and return to idle."""
+    def boom(turns):
+        raise RuntimeError("memory disk full")
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1,
+        audio=FakeAudio(),
+        on_conversation_end=boom,
+        session_factory=lambda: FakeSession(),
+    )
+
+    machine.trigger()
+
+    assert machine.state is sm.State.IDLE
+
+
+def test_the_system_prompt_carries_long_term_memory(monkeypatch):
+    monkeypatch.setattr(sm.memory, "long_term_context",
+                        lambda: "Who the user is:\n- name: Shivansh")
+    monkeypatch.setattr(sm.memory, "recent_context", lambda: "")
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=1.0, audio=FakeAudio(),
+    )
+
+    assert "name: Shivansh" in machine._system_prompt()
+
+
+def test_empty_memory_blocks_leave_no_gaps_in_the_prompt(monkeypatch):
+    """Most blocks are empty most of the time. An unfiltered join leaves blank
+    stretches that read to the model as missing instructions — and a block
+    returning None instead of "" would raise here and kill every conversation."""
+    monkeypatch.setattr(sm.memory, "long_term_context", lambda: "")
+    monkeypatch.setattr(sm.memory, "recent_context", lambda: "")
+    monkeypatch.setattr(sm, "_time_context", lambda: "")
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=1.0, audio=FakeAudio(),
+    )
+
+    assert machine._system_prompt() == "be TRON\n\n" + sm.brain.HOUSE_RULES
+
+
+def test_greet_puts_its_instruction_in_the_prompt_then_drops_it():
+    """The note is for one conversation. If it stayed set, TRON would open every
+    later conversation by greeting you again."""
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1, audio=FakeAudio(),
+        session_factory=lambda: FakeSession(),
+    )
+
+    machine._pending_note = "greet the user now"
+    assert "greet the user now" in machine._system_prompt()
+    assert "greet the user now" not in machine._system_prompt()
+
+
+def test_greet_starts_a_conversation():
+    prompts = []
+
+    def factory():
+        prompts.append(machine._system_prompt())
+        return FakeSession()
+
+    machine = sm.TronStateMachine(
+        api_key="k", model_name="m", voice_name="Charon", persona_text="be TRON",
+        silence_timeout_s=0.1, audio=FakeAudio(), session_factory=factory,
+    )
+
+    machine.greet("say good morning")
+
+    assert prompts and "say good morning" in prompts[0]
     assert machine.state is sm.State.IDLE

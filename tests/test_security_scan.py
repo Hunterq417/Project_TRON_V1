@@ -41,7 +41,7 @@ def test_scan_for_malware_refuses_concurrent_scans():
 
 
 def test_run_scan_marks_completed_on_success(monkeypatch):
-    monkeypatch.setattr(security_scan.subprocess, "run", MagicMock())
+    monkeypatch.setattr(security_scan.subprocess, "run", MagicMock(return_value=MagicMock(stdout="0\n")))
     logged = []
     monkeypatch.setattr(security_scan.memory, "log_activity", lambda entry: logged.append(entry))
 
@@ -80,3 +80,15 @@ def test_check_scan_status_failed():
     with security_scan._status_lock:
         security_scan._status["state"] = "failed"
     assert "failed" in security_scan.check_scan_status({}, None)
+
+
+def test_completed_scan_reports_detections_not_blanket_all_clear(monkeypatch):
+    """A clean exit from Start-MpScan is not a clean machine."""
+    logged = []
+    monkeypatch.setattr(security_scan.memory, "log_activity", logged.append)
+    for stdout, expected in (("2\n", "detected 2"), ("0\n", "no threats"),
+                             ("UNKNOWN\n", "couldn't read")):
+        monkeypatch.setattr(security_scan.subprocess, "run",
+                            MagicMock(return_value=MagicMock(stdout=stdout)))
+        security_scan._run_scan()
+        assert expected in security_scan.check_scan_status({}, None)

@@ -4,7 +4,28 @@ numpy>=1.26
 keyboard>=0.13.5
 pystray>=0.19.5
 Pillow>=10.0
-pywebview>=5.0
 opencv-python>=4.8
 openwakeword>=0.6.0
 pytest>=8.0
+psutil
+pycaw
+comtypes
+# video clipping: ffmpeg binary (yt-dlp itself is fetched as yt-dlp.exe on first use, so it can update)
+imageio-ffmpeg>=0.5
+
+# offline mode: local speech recognition
+onnx-asr[cpu]>=0.7
+# echo cancellation (WebRTC audio processing)
+livekit>=1.0
+# local mode: TRON's own voice (Kokoro) — the local brain itself runs in Ollama
+kokoro-onnx>=0.4
+# control panel look
+customtkinter>=5.2
+# the TRON browser: Playwright drives Brave over CDP (no browser download needed)
+playwright>=1.50
+# who is speaking: speaker embeddings (3D-Speaker CAM++)
+sherpa-onnx>=1.10
+requests
+pydantic>=2
+# setup_models.py
+huggingface_hub

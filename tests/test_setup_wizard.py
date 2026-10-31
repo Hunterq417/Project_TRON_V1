@@ -53,3 +53,8 @@ def test_write_config_file_writes_valid_json(tmp_path):
     setup_wizard.write_config_file(path, config_dict)
 
     assert json.loads(path.read_text(encoding="utf-8")) == {"gemini_api_key": "k"}
+
+
+def test_no_gemini_key_means_local_mode():
+    assert setup_wizard.build_config_dict({"gemini_api_key": ""})["brain"] == "local"
+    assert setup_wizard.build_config_dict({"gemini_api_key": "k"})["brain"] == "gemini"

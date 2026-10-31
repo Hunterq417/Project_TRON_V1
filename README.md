@@ -1,106 +1,148 @@
 # TRON
 
-A personal voice assistant. All 6 sub-projects complete — see
-`docs/superpowers/specs/` for the full design history and roadmap.
+A voice assistant for Windows that lives on your desktop and controls your PC. Say **"hey tron"** and talk:
+"open Spotify and play Blinding Lights", "set a timer for ten minutes", "play the next episode", "tell me
+when the Valorant update finishes", "who's here?".
 
-## Running from source (development)
+It can run **entirely on your PC** (no internet, no API key) or use **Google Gemini Live** for its brain.
 
-1. Python 3.13 (this machine only had 3.13 installed; the original spec
-   targeted 3.11/3.12 but nothing here needs an older version).
-2. `python -m venv .venv` then `.venv\Scripts\pip install -r requirements.txt`
-3. Get a Gemini API key from https://aistudio.google.com/apikey
-4. `copy config.example.json config.json` and fill in `gemini_api_key`
-5. (Optional, for email) Fill in `smtp_host`/`smtp_port`/`smtp_user`/
-   `smtp_app_password` in `config.json`. For Gmail: enable 2FA on the
-   account, then generate an "app password" at
-   https://myaccount.google.com/apppasswords — your normal password will
-   not work over SMTP.
-6. `.venv\Scripts\python main.py`
-7. Press `Ctrl+Alt+T` (configurable in `config.json`) to talk to TRON. Quit
-   from the system tray icon.
+## What it does
 
-By default TRON listens for a hotkey, not a spoken wake word — training a
-real "hey tron" model is a separate offline step. See
-[Upgrading to the "hey tron" wake word](#upgrading-to-the-hey-tron-wake-word) below.
+- **Hears, thinks and speaks.** Local mode: Parakeet (speech to text), Qwen3.5 in Ollama (the brain), a
+  Windows or Kokoro voice. Gemini mode: Gemini Live does all three, and falls back to local when offline.
+- **Decides carefully.** A small decision engine around the model: the right tool for what you mean,
+  results verified before it says something worked, a spoken "yes" before shutdown / restart / sleep /
+  sending email, and nothing forgotten unless you say "forget".
+- **Controls the PC.** Apps and windows (including apps in the tray), volume, brightness, Wi-Fi, Bluetooth,
+  dark mode, lock, timers, dictation, files, clicking and typing on screen, clipping videos.
+- **Music.** Spotify by default; YouTube Music and YouTube in the TRON browser.
+- **The TRON browser.** Its own Brave window it can see inside: next/previous episode, skip, pause, volume,
+  subtitles, full screen, verified on the page itself. See [docs/BROWSER_INTELLIGENCE.md](docs/BROWSER_INTELLIGENCE.md).
+- **Watches for you.** "Tell me when the download finishes": it checks the window and announces it.
+- **Knows who you are.** Face recognition (ArcFace) and voice recognition (CAM++), learned from the control
+  panel. Remembers your preferences and learns from conversations.
+- **On screen.** Three faces to choose from: Halo Ring, Aurora Orb, Dust Orb. A control panel with stats,
+  conversations, memory and skills, people, settings and keys.
 
-## Running the packaged .exe
+## Requirements
 
-Build `TRON.exe` per `docs/build_exe.md`, or if you already have one: just
-double-click it. First launch opens a small setup window asking for your
-Gemini API key (and optionally email settings, camera/screen access) and
-offers to start TRON automatically on login — no manual `config.json`
-editing needed. Every launch after that goes straight to the tray icon.
+- Windows 10 or 11, a microphone. A webcam for face recognition.
+- [Python 3.13](https://www.python.org/downloads/) (3.11+ should work).
+- [Brave](https://brave.com/) for the TRON browser and the Dust Orb (optional otherwise).
+- For Local mode: [Ollama](https://ollama.com/download) and about 4 GB of free GPU memory (or a patient CPU).
+- For Gemini mode: a free API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
-If TRON crashes, check `tron_error.log` next to the exe for a traceback.
+## Install
 
-## Orb HUD
+```powershell
+git clone https://github.com/Hunterq417/Project_TRON_V1.git
+cd Project_TRON_V1
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+```
 
-A centered particle sphere pops onto the screen the moment you talk to TRON
-and disappears again once the conversation ends — TRON runs quietly in the
-tray the rest of the time. It uses the same color language as the tray icon
-(table below), plus a real-time pulse driven by the actual loudness of
-TRON's voice as it speaks. Toggle it manually anytime from the tray menu's
-"Show/Hide Orb."
+### Download the offline models
 
-The orb is centered on your primary monitor and tries to pin itself to the
-desktop layer — behind every application window, like a live wallpaper —
-using the same undocumented Windows trick apps like Wallpaper Engine use.
-This can fail on some Windows builds/configurations; when it does, the orb
-just falls back to being a normal (not-always-on-top) window instead of
-erroring.
+Models are not in this repository (about 1.3 GB). One command fetches them into `models\`:
 
-**On this machine specifically, it doesn't pin** — diagnosed directly against
-this real desktop (not simulated): the classic lookup (find the WorkerW
-sibling of the window hosting the desktop icons) and the fallback (the
-WorkerW right after Progman) both come back empty here, most likely because
-this Windows build's icon host is `SHELLDLL_DefView` sitting straight under
-`Progman` with no freshly-spawned `WorkerW` at all. The orb still works —
-centered, color-coded, audio-reactive — it just won't be *behind* other
-windows on this PC; it'll behave like a normal window instead. This may
-differ on other machines/Windows builds. `pin_to_desktop()` never raises
-either way, so this degrades quietly rather than breaking anything.
+```powershell
+.venv\Scripts\python setup_models.py
+```
 
-## Tray icon / orb status colors
-
-| Color | State | Meaning |
+| Model | For | Licence |
 |---|---|---|
-| White/gray | Idle | Waiting for the hotkey |
-| Blue | Listening | Mic is capturing your speech |
-| Amber | Thinking | Waiting on Gemini's response |
-| Green | Speaking | TRON's reply is playing |
-| Purple | Acting | A tool (open app, media control, email, search, vision, scan) is running |
-| Red | Error | Network/API failure this turn — press the hotkey again to retry |
+| NVIDIA Parakeet TDT 0.6B v2 (ONNX, int8) | hearing in Local mode, dictation | CC-BY-4.0 |
+| Kokoro-82M (ONNX) | the Kokoro voices | Apache-2.0 |
+| InsightFace buffalo_l: SCRFD + ArcFace R50 | face recognition | **non-commercial use only** |
+| 3D-Speaker CAM++ | voice recognition | Apache-2.0 |
+| openWakeWord front-end | "hey tron" | Apache-2.0 |
 
-## What TRON can do now
+`models\tron.onnx`, TRON's own "hey tron" model, is included. Skip what you don't need, e.g.
+`setup_models.py --skip faces voices`.
 
-- Open apps, files, photos, videos, or games by name ("open notepad", "open that dune photo")
-- Control media playback: play/pause, next/previous track, seek forward/backward (best-effort, up to about a minute)
-- Search the web
-- Draft and — after you confirm out loud — send email
-- Remember recent activity across conversations, recite it ("what have you been up to") or clear it on request
-- Look at your screen or through your camera and describe what it sees (off by default — see Privacy below)
-- Run a Windows Defender malware scan and report whether it's finished
+### Download the local brain
 
-## Privacy
+Install Ollama, then:
 
-Camera and screen access are **off by default**. They're not just discouraged
-by instructions — the `look_at_screen`/`look_via_camera` tools are not even
-declared to Gemini unless you check "Enable camera access"/"Enable screen
-reading" in setup (or set `camera_enabled`/`screen_enabled` to `true` in
-`config.json`), so the model has no tool by that name to call until you
-opt in. No frame is ever saved to disk — captured images go straight into
-the live conversation and are discarded; only the fact that a capture
-happened is logged. Every tool call TRON makes (including vision captures
-and scans) is visible by asking "what have you been up to."
+```powershell
+ollama pull qwen3.5:4b
+```
+
+Any model you pull can be chosen later in Settings > Local model. `qwen3.5:4b` was the best fit tested on an
+RTX 4070 laptop (right on 21 of 22 test commands, about 1.5 s per answer).
+
+### Configure
+
+```powershell
+copy config.example.json config.json
+```
+
+Then edit `config.json`, or just start TRON: if `config.json` is missing, a setup window asks for the few
+things it needs. Leave the Gemini key empty to run fully locally. Everything else can be changed later in the
+control panel (tray icon > Control panel), which saves to `config.json`.
+
+Main settings: `brain` (`local` or `gemini`), `local_model`, `local_voice` (`david`, `zira`, `hazel`, or a
+Kokoro voice such as `am_michael`), `wake_mode` (`openwakeword` or `hotkey`), `hotkey`, `mic_device`,
+`speaker_device` (empty follows Windows), `ui_model` (`halo-ring`, `aurora-orb`, `dust-orb`),
+`camera_enabled`, `screen_enabled`.
+
+### Run
+
+```powershell
+.venv\Scripts\python src\main.py
+```
+
+TRON starts in the tray. Say "hey tron" or press `Ctrl+Alt+T`. Useful flags: `--selftest` (checks the
+models, voice and devices and writes `selftest.log`), `--panel` (only the control panel), `--list-mics`.
+
+For the TRON browser, say "open the TRON browser" (or use the button on the control panel's Home page) and
+watch videos there. It uses its own Brave profile; your normal Brave is untouched.
+
+## Build a standalone TRON.exe
+
+```powershell
+.venv\Scripts\pip install -r requirements-build.txt
+.venv\Scripts\pyinstaller TRON.spec --noconfirm
+```
+
+This makes `dist\TRON.exe`. Put `config.json`, `persona.txt` and the `models` folder next to it.
 
 ## Tests
 
-`.venv\Scripts\pytest`
+```powershell
+.venv\Scripts\pytest
+```
 
-## Upgrading to the "hey tron" wake word
+About 440 tests. The browser tests run against local pages in a headless Brave and are skipped if Brave
+isn't installed; a few model tests are skipped until `setup_models.py` has run.
 
-`OpenWakeWordTrigger` (continuous listening, no hotkey) is fully built and
-tested — it just needs a trained `models/tron.onnx` file, which is a
-separate offline training step (Colab notebook, not application code). See
-`docs/train_wakeword.md` for the exact steps and how to switch
-`config.json`'s `wake_mode` over once you have it.
+## Project layout
+
+```
+src/            the code (entry point: src/main.py)
+  state_manager.py   conversations: wake word -> brain -> tools -> voice
+  local_brain.py     the local decision engine (Ollama), decision.py, tool_registry.py, memory_service.py
+  gemini_live_client.py   Gemini Live
+  tools.py           every tool TRON can use; brain.py: safety rules
+  browser_*.py       the TRON browser; faces.py, voices.py: who's there
+  control_panel.py, orb_ui.py, dust_orb.py   the windows on screen
+  assets/dust_orb/   the Dust Orb (Ship Notes dust-orb v2, MIT)
+tests/          pytest suite
+docs/           BROWSER_INTELLIGENCE.md
+setup_models.py downloads the offline models
+TRON.spec       PyInstaller build
+persona.txt     TRON's personality
+```
+
+## Privacy
+
+Everything TRON learns stays in its folder: `memory\` (facts, face and voice fingerprints, never photos or
+recordings), `logs\` (conversations) and `config.json` (keys). None of these are in git. In Local mode
+nothing leaves the PC. In Gemini mode your voice during a conversation goes to Google, and a screenshot or
+camera frame only when you ask TRON to look and allow it in Settings. Enrol other people's faces and voices
+only with their agreement.
+
+## Credits
+
+Parakeet (NVIDIA), Qwen (Alibaba), Ollama, Kokoro, InsightFace, 3D-Speaker and sherpa-onnx, openWakeWord,
+Playwright, CustomTkinter, the Ship Notes Dust Orb and three.js. Each keeps its own licence.

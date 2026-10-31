@@ -1,12 +1,34 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
+
+# your own settings and keys: copy config.example.json to config.json
 config.json
-models/*.onnx
-.gstack/
+
+# downloaded models (run setup_models.py); TRON's own wake word model is kept
+models/*
+!models/tron.onnx
+
+# what TRON learns and records about you, and its logs
 memory/
-tron_error.log
+logs/
+skills/
+vocabulary.json
+*.log
+mic_test.wav
+
+# runtime downloads and the TRON browser profile
+tools/
+browser_profile/
+
+# builds
 build/
 dist/
-*.spec
+dist_next/
+
+# local tool state
+.gstack/
+.claude/
