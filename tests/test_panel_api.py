@@ -65,3 +65,37 @@ def test_restart_switch_and_talk_reach_tron(tmp_path, monkeypatch):
     assert sorted(asked) == ["restart", "talk"]
     assert api.switch_assistant("friday")["ok"] and api.status()["who"] == "friday"
     assert api.action("no_such_thing")["ok"] is False
+
+
+LOG = """
+===== 2026-11-11 03:25:00 =====
+YOU:  motherchod
+DID:  not_for_me() -> ok, silent
+
+===== 2026-11-11 03:30:00 =====
+YOU:  It run.
+TRON: Running, sir.
+DID:  open_target(name="x") -> opened
+"""
+
+
+def test_delete_a_whole_conversation_or_one_line(tmp_path, monkeypatch):
+    import convo_log
+    log = tmp_path / "conversation_log.txt"
+    log.write_text(LOG, encoding="utf-8")
+    monkeypatch.setattr(convo_log, "path", lambda: log)
+    api = panel_api.Api()
+    assert [c["id"] for c in api.conversations()] == ["2026-11-11 03:30:00", "2026-11-11 03:25:00"]
+
+    assert api.delete_line("2026-11-11 03:30:00", 1)["ok"]                 # "TRON: Running, sir."
+    assert api.conversation("2026-11-11 03:30:00") == [["you", "It run."], ["did", 'open_target(name="x") -> opened']]
+
+    assert api.delete_conversation("2026-11-11 03:25:00")["ok"]
+    assert "motherchod" not in log.read_text(encoding="utf-8")
+    assert [c["id"] for c in api.conversations()] == ["2026-11-11 03:30:00"]   # the other one is untouched
+
+    assert api.delete_conversation("2026-11-11 03:25:00")["ok"] is False      # already gone: said, not faked
+    assert api.delete_line("2026-11-11 03:30:00", 9)["ok"] is False
+
+    convo_log.write([("user", "next one")])                                   # TRON keeps logging afterwards
+    assert "next one" in log.read_text(encoding="utf-8")

@@ -135,7 +135,8 @@ class Api:
 
     def conversations(self):
         items = []
-        for i, (stamp, body) in enumerate(self._sessions()[:80]):
+        for raw, body in self._sessions()[:80]:
+            stamp = raw
             said = next((l[5:].strip() for l in body.splitlines() if l.startswith("YOU:")), "")
             try:
                 when = datetime.datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
@@ -143,17 +144,25 @@ class Api:
                 stamp = f"{day} {when:%H:%M}"
             except ValueError:
                 pass
-            items.append({"id": str(i), "when": stamp, "preview": said[:70] or "(nothing said)"})
+            items.append({"id": raw, "when": stamp, "preview": said[:70] or "(nothing said)"})
         return items
 
     def conversation(self, conv_id):
-        sessions = self._sessions()
-        try:
-            body = sessions[int(conv_id)][1]
-        except (ValueError, IndexError):
+        body = next((b for stamp, b in self._sessions() if stamp == conv_id), None)
+        if body is None:
             return []
         kinds = {"YOU:": "you", "TRON": "tron", "DID:": "did"}
         return [[kinds[l[:4]], l[5:].strip()] for l in body.splitlines() if l[:4] in kinds]
+
+    def delete_conversation(self, conv_id):
+        import convo_log
+        return _ok("Conversation deleted") if convo_log.delete_conversation(conv_id) else \
+            {"ok": False, "message": "That conversation was already gone"}
+
+    def delete_line(self, conv_id, index):
+        import convo_log
+        return _ok("Line deleted") if convo_log.delete_line(conv_id, index) else \
+            {"ok": False, "message": "That line was already gone"}
 
     # ------------------------------------------------------------ Memory
     def memory(self):

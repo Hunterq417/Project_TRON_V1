@@ -12,10 +12,15 @@ calls the safety layer refused. One file, appended to, in TRON's folder: logs\\c
 """
 import datetime
 import json
+import re
+import threading
 
 import config
 
 LABELS = {"user": "YOU: ", "assistant": "TRON:", "tool": "DID: ", "note": "NOTE:"}
+
+
+_lock = threading.Lock()   # appends and the panel's deletes rewrite the same file
 
 
 def path():
@@ -69,7 +74,7 @@ class Session:
                 return
             target = path()
             target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("a", encoding="utf-8") as f:
+            with _lock, target.open("a", encoding="utf-8") as f:
                 if not self._header:
                     f.write(f"\n===== {self.started.strftime('%Y-%m-%d %H:%M:%S')} =====\n")
                     self._header = True
@@ -87,7 +92,60 @@ def write(events, started: datetime.datetime = None) -> None:
         stamp = (started or datetime.datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
         target = path()
         target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("a", encoding="utf-8") as f:
+        with _lock, target.open("a", encoding="utf-8") as f:
             f.write(f"\n===== {stamp} =====\n" + "\n".join(lines) + "\n")
     except Exception:
         pass
+
+
+_KINDS = ("YOU:", "TRON", "DID:")
+
+
+def _rewrite(change) -> bool:
+    """Splits the log into [prefix, header, body, header, body, ...], lets change() edit that list, and writes it
+    back atomically (a temp file, then replace). False when nothing changed or the log can't be read."""
+    with _lock:
+        try:
+            text = path().read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+        parts = re.split(r"(?m)^(===== .+? =====)$", text)
+        if not change(parts):
+            return False
+        tmp = path().with_suffix(".tmp")
+        tmp.write_text("".join(parts), encoding="utf-8")
+        tmp.replace(path())
+        return True
+
+
+def _find(parts, stamp: str):
+    return next((i for i in range(1, len(parts), 2) if parts[i] == f"===== {stamp} ====="), None)
+
+
+def delete_conversation(stamp: str) -> bool:
+    """Deletes one whole conversation, found by its "YYYY-MM-DD HH:MM:SS" header. Permanent.
+    shortcut: deleting a conversation still in progress loses its header, so its later lines join the one
+    before; fine for a panel that lists finished ones, revisit if live deletion is ever needed."""
+    def change(parts):
+        i = _find(parts, stamp)
+        if i is None:
+            return False
+        del parts[i:i + 2]
+        return True
+    return _rewrite(change)
+
+
+def delete_line(stamp: str, index: int) -> bool:
+    """Deletes the index-th line (counting only YOU / TRON / DID lines) of one conversation. Permanent."""
+    def change(parts):
+        i = _find(parts, stamp)
+        if i is None:
+            return False
+        lines = parts[i + 1].split("\n")
+        spoken = [n for n, line in enumerate(lines) if line[:4] in _KINDS]
+        if not 0 <= int(index) < len(spoken):
+            return False
+        del lines[spoken[int(index)]]
+        parts[i + 1] = "\n".join(lines)
+        return True
+    return _rewrite(change)

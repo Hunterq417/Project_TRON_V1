@@ -132,11 +132,19 @@ select:focus, input:focus { border-color: var(--light); outline: none; }
 /* conversations: list + reader */
 .split { display: grid; grid-template-columns: 250px 1fr; gap: 28px; max-width: none; }
 .convos { list-style: none; margin: 0; padding: 0; }
+.convos li { position: relative; }
+.convos .del { position: absolute; top: 8px; right: 6px; width: auto; padding: 3px 8px; border: 1px solid transparent; border-radius: 7px; font-size: 12px; color: var(--ink-3); opacity: 0; background: var(--field); }
+.convos li:hover .del, .convos li:focus-within .del, .convos .del.armed { opacity: 1; }
+.convos .del:hover { border-color: var(--bad); color: var(--bad); }
+.convos .del.armed { border-color: var(--bad); color: var(--field); background: var(--bad); }
 .convos button { width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid transparent; padding: 9px 12px; cursor: pointer; color: var(--ink-2); }
 .convos button[aria-current="true"] { border-left-color: var(--light); color: var(--ink); background: var(--light-soft); }
 .convos small { display: block; color: var(--ink-3); }
 .reader { border-left: 1px solid var(--rule); padding-left: 28px; min-height: 300px; }
-.line { margin: 0 0 12px; max-width: 64ch; }
+.line { margin: 0 0 12px; max-width: 64ch; position: relative; padding-right: 30px; }
+.line .x { position: absolute; top: 0; right: 0; background: none; border: 0; color: var(--ink-3); cursor: pointer; opacity: 0; font-size: 15px; line-height: 1; padding: 2px 6px; border-radius: 6px; }
+.line:hover .x, .line .x:focus-visible { opacity: 1; }
+.line .x:hover { color: var(--bad); background: rgba(255,122,107,.1); }
 .line.you::before { content: "You"; display: block; color: var(--ink-3); font-size: 12px; }
 .line.tron::before { content: attr(data-who); display: block; color: var(--light); font-size: 12px; }
 .line.did { color: var(--ink-3); font-size: 13px; padding-left: 12px; border-left: 2px solid var(--rule-2); }
@@ -379,9 +387,16 @@ const LOAD = {
   },
   async conversations() {
     const list = await api.conversations();
-    rows($("#convos"), list, c => `<li><button data-id="${esc(c.id)}">${esc(c.preview)}<small>${esc(c.when)}</small></button></li>`, "No conversations yet.");
-    $$("#convos button").forEach(b => b.onclick = () => openConvo(b));
-    if (list.length) openConvo($("#convos button"));
+    rows($("#convos"), list, c => `<li><button class="open" data-id="${esc(c.id)}">${esc(c.preview)}<small>${esc(c.when)}</small></button><button class="del" data-del="${esc(c.id)}" aria-label="Delete conversation">Delete</button></li>`, "No conversations yet.");
+    $$("#convos .open").forEach(b => b.onclick = () => openConvo(b));
+    $$("#convos .del").forEach(b => b.onclick = async () => {
+      // Permanent, so it takes a second click: the first one turns the button into "Delete for good".
+      if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "Delete for good"; setTimeout(() => { b.classList.remove("armed"); b.textContent = "Delete"; }, 3500); return; }
+      const li = b.closest("li"), wasOpen = li.querySelector(".open").getAttribute("aria-current") === "true";
+      const r = await api.delete_conversation(b.dataset.del); toast(r.message);
+      if (r.ok) { li.remove(); if (wasOpen) { const next = $("#convos .open"); next ? openConvo(next) : ($("#reader").innerHTML = ""); } }
+    });
+    if (list.length) openConvo($("#convos .open"));
   },
   async memory() {
     const m = await api.memory();
@@ -408,9 +423,13 @@ const LOAD = {
 };
 
 async function openConvo(btn) {
-  $$("#convos button").forEach(b => b.setAttribute("aria-current", b === btn));
-  const lines = await api.conversation(btn.dataset.id);
-  $("#reader").innerHTML = lines.map(([k, t]) => `<p class="line ${k}" data-who="${NAMES[who]}">${esc(t)}</p>`).join("");
+  $$("#convos .open").forEach(b => b.setAttribute("aria-current", b === btn));
+  const id = btn.dataset.id, lines = await api.conversation(id);
+  $("#reader").innerHTML = lines.length ? lines.map(([k, t], i) => `<p class="line ${k}" data-who="${NAMES[who]}">${esc(t)}<button class="x" data-line="${i}" aria-label="Delete this line" title="Delete this line">×</button></p>`).join("") : `<p class="empty">Nothing left in this conversation.</p>`;
+  $$("#reader [data-line]").forEach(b => b.onclick = async () => {
+    const r = await api.delete_line(id, +b.dataset.line); toast(r.message);
+    if (r.ok) openConvo(btn);   // re-read: line numbers shift after a delete
+  });
 }
 
 // ---------------------------------------------------------------- settings form, grouped by meaning
