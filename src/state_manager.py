@@ -2,6 +2,7 @@
 import asyncio
 import datetime
 import json
+import latency
 import threading
 import time
 import traceback
@@ -397,6 +398,7 @@ class TronStateMachine:
         last_user_words = [0.0]   # when the user's last transcribed words arrived
         last_activity = time.monotonic()
         last_audio = [0.0]
+        spoke_ns = [0]   # end of the user's latest speech, waiting for the reply's first audio (latency.py)
         ended_in_error = False
         fragments: list = []    # (role, text) in order: user/assistant speech, tool calls, notes
 
@@ -465,6 +467,7 @@ class TronStateMachine:
                                 # and with music playing a conversation never ended (nor got logged). Only
                                 # words Gemini actually transcribes count as the user still talking.
                                 last_voice = time.monotonic()
+                                spoke_ns[0] = latency.now_ns()
                                 if not was_listening:
                                     self._set_state(State.LISTENING)
                                     was_listening = True
@@ -481,6 +484,9 @@ class TronStateMachine:
                             if self._stop_now:
                                 return
                             guard.turn_over()
+                            if spoke_ns[0]:
+                                latency.record("response", spoke_ns[0])
+                                spoke_ns[0] = 0
                             self._set_state(State.SPEAKING)
                             # Off the loop: write() blocks until the device
                             # buffer has room, which starved send_loop.
@@ -492,7 +498,9 @@ class TronStateMachine:
                             self._set_state(State.ACTING)
                             for call in event["calls"]:
                                 refused = guard.check(call["name"], call["args"])
+                                began = latency.now_ns()
                                 result = refused or await self._run_tool(call, session)
+                                latency.record("tool", began, detail=call["name"])
                                 fragments.append(("tool", convo_log.tool_line(
                                     call["name"], call["args"], ("REFUSED BY SAFETY CHECK: " if refused else "") + result)))
                                 memory.log_activity({

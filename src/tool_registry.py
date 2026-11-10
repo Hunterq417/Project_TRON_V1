@@ -75,6 +75,9 @@ TOOLS = {m.name: m for m in (
     # routine learning and the three assistants
     _read("my_routine", "memory"), _t("forget_routine", "memory", "DELETE", "medium"),
     _t("switch_assistant", "assistant", "UPDATE"), _read("not_for_me", "assistant"),
+    # recurring tasks: each run goes through the same Guard, so a scheduled send still needs a spoken yes
+    _t("schedule_task", "scheduler", "CREATE"), _read("list_schedules", "scheduler"),
+    _t("cancel_schedule", "scheduler", "DELETE"),
     # timers
     _t("set_timer", "timers", "CREATE"), _read("check_timers", "timers"), _t("cancel_timer", "timers", "DELETE"),
     # dictation

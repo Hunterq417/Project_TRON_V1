@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import audio_io
 import json
+import time
 import config as config_module
 import setup_wizard
 from orb_ui import OrbUI
@@ -347,6 +348,33 @@ def main() -> None:
             return bool(json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8")).get(name, default))
         except Exception:
             return default
+
+    def run_scheduled(task: str) -> None:
+        note = (f"A recurring task the user set up earlier is due: {task}. Speak first, do it now with your "
+                "tools, then tell them in one or two sentences what you did.")
+        for _ in range(30):   # TRON busy (a conversation, dictation): try again for up to 5 minutes
+            if machine.state.name in ("IDLE", "ERROR") and machine.dictation is None:
+                machine.greet(note)
+                return
+            time.sleep(10)
+
+    import scheduler
+    scheduler.start(run_scheduled)
+
+    try:
+        mcp_servers = json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8")).get("mcp_servers")
+    except Exception:
+        mcp_servers = None
+    try:
+        hotspot_ssid = json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8")).get("hotspot_ssid")
+    except Exception:
+        hotspot_ssid = None
+    if hotspot_ssid:
+        import hotspot
+        hotspot.start(hotspot_ssid, tray.notify)
+    if mcp_servers:   # other apps' MCP servers become TRON's tools; slow ones never delay startup
+        import mcp_hub
+        threading.Thread(target=lambda: print("MCP:", mcp_hub.start(mcp_servers)), daemon=True).start()
 
     if _config_flag("announce_calls", True):
         import calls

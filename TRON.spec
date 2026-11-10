@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = []
 binaries = []
@@ -39,6 +39,8 @@ for _pkg in ('onnx_asr', 'livekit', 'kokoro_onnx', 'espeakng_loader', 'phonemize
              'googleapiclient', 'google_auth_oauthlib', 'bleak', 'winrt'):
     tmp_ret = collect_all(_pkg)
     datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# MCP client and server (mcp_hub, google_mcp), without its optional command-line tool
+hiddenimports += collect_submodules('mcp', filter=lambda n: '.cli' not in n)
 tmp_ret = collect_all('imageio_ffmpeg')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

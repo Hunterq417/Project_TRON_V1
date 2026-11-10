@@ -455,10 +455,14 @@ class LocalSession:
             return f"there is no tool called {name}"
         tools.routine.observe(name, args, self.cfg)
         self.handed_over = self.handed_over or name == "switch_assistant"
+        import latency
+        began = latency.now_ns()
         try:
             return str(handler(args, self.cfg))
         except Exception as exc:
             return f"that failed, sir: {type(exc).__name__}: {exc}"
+        finally:
+            latency.record("tool", began, brain="local", detail=name)
 
     def run(self, max_turns: int = 12, greet: bool = False) -> None:
         import winsound
@@ -482,12 +486,15 @@ class LocalSession:
                 self.log.append(("note", f'stopped: "{said}" means stop talking'))
                 break
             self._set_state("ACTING")
+            import latency
+            heard = latency.now_ns()   # speech already ended and was transcribed: this measures thinking
             try:
                 answer = self.brain.reply(said, self.guard, self.run_tool, self.log)
             except Exception as exc:
                 answer = "My local brain isn't answering, sir. Is Ollama running?"
                 self.log.append(("note", f"local brain failed: {type(exc).__name__}: {exc}"))
             self.guard.turn_over()
+            latency.record("response", heard, brain="local")
             self.say(answer)
             if self.dictate_after or self.handed_over:
                 break
