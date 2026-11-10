@@ -32,3 +32,4 @@ huggingface_hub
 mcp>=2.3
 google-api-python-client>=2.200
 google-auth-oauthlib>=1.5
+bleak>=1.0

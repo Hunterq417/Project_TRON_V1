@@ -351,6 +351,14 @@ def main() -> None:
     if _config_flag("announce_calls", True):
         import calls
         calls.start(announce_call, lambda: _config_flag("announce_messages", False))
+    try:
+        ancs_address = json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8")).get("ancs_address")
+    except Exception:
+        ancs_address = None
+    if ancs_address:   # prototype: the iPhone's own notifications over Bluetooth, no Phone Link needed
+        import ancs
+        ancs.start(ancs_address, lambda text, event: announce_call(text) if event["kind"] == "call"
+                   or _config_flag("announce_messages", False) else None)
 
     if cfg.wake_mode == "hotkey":
         triggers = [HotkeyTrigger(cfg.hotkey, on_trigger=machine.hotkey)]
