@@ -1,5 +1,6 @@
 # orb_ui.py
 import ctypes
+import time
 import json
 import math
 import tkinter as tk
@@ -151,6 +152,7 @@ class OrbUI:
             self._root.bind("<ButtonRelease-1>", self._on_release)
 
         self._visible = True
+        self._sunk_at = 0.0
         self._last_key = None
         self._placed = False
         self._quitting = False
@@ -319,6 +321,7 @@ class OrbUI:
         wallpaper and below everything else, which is what was wanted.
         """
         desktop_layer.send_to_bottom(self._hwnd)
+        self._sunk_at = time.monotonic()
 
     def _tick(self) -> None:
         """One animation frame. Never allowed to raise.
@@ -401,3 +404,8 @@ class OrbUI:
                 desktop_layer.keep_on_top(self._hwnd)
             else:
                 self._sink()
+        elif not self._topmost and time.monotonic() - self._sunk_at > 2.0:
+            # Something can raise the orb above your windows (a restore after Show desktop, a click on it);
+            # pushing it back down every 2 s keeps it under them. It still shows on Show desktop, because
+            # the desktop owns it (desktop_layer.survive_show_desktop).
+            self._sink()
