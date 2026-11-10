@@ -154,6 +154,21 @@ def send_to_bottom(hwnd: int) -> bool:
     ))
 
 
+def survive_show_desktop(hwnd: int) -> bool:
+    """Keeps hwnd on screen through Show desktop (Win+D, the three-finger swipe down), which hides every
+    application window. Windows leaves the desktop's own windows alone, so this makes the desktop (Progman)
+    the window's OWNER, the way desktop-widget apps such as Rainmeter do. An owner, not a parent: hwnd stays
+    top-level, so its layered transparency still works (pin_to_desktop's child window renders black)."""
+    progman = user32.FindWindowW("Progman", None)
+    if not progman:
+        return False
+    set_owner = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+    set_owner.restype = ctypes.c_void_p
+    set_owner.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_void_p]
+    set_owner(wintypes.HWND(hwnd), -8, progman)   # GWLP_HWNDPARENT sets the owner of a top-level window
+    return True
+
+
 def keep_on_top(hwnd: int) -> bool:
     """Floats hwnd above ordinary windows, without stealing focus.
 

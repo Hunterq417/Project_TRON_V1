@@ -269,6 +269,7 @@ class OrbUI:
         positioning measures the window and its size only settles once
         UpdateLayeredWindow has been given a frame."""
         desktop_layer.strip_window_chrome(self._hwnd)
+        desktop_layer.survive_show_desktop(self._hwnd)   # stays through Win+D and the three-finger swipe
         saved = self._config_data().get("widget_pos")
         if self._draggable and isinstance(saved, (list, tuple)) and len(saved) == 2:
             desktop_layer.move_onscreen(self._hwnd, int(saved[0]), int(saved[1]))
