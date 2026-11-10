@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRON</title>
+<style>
+/* One room per identity: the field, the light and the orb all change together. */
+:root {
+  --field: #0A1A1F; --field-2: #0F242A; --field-3: #15313A; --light: #5CE1E6; --light-soft: rgba(92,225,230,.14);
+  --ink: #ECE7DF; --ink-2: #A9B4B3; --ink-3: #6E7C7C; --rule: rgba(236,231,223,.08); --rule-2: rgba(236,231,223,.14);
+  --good: #7BD88F; --warn: #F2C063; --bad: #FF7A6B;
+  --display: "Bahnschrift", "DIN Alternate", "Segoe UI", sans-serif;
+  --body: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --ease: cubic-bezier(.2,.8,.2,1);
+  color-scheme: dark;
+}
+body[data-who="friday"] { --field:#1C0D18; --field-2:#24111F; --field-3:#331828; --light:#FF6FB1; --light-soft:rgba(255,111,177,.14); --ink-2:#BFAAB6; --ink-3:#806A77; }
+body[data-who="jarvis"] { --field:#1E0B0B; --field-2:#271010; --field-3:#371616; --light:#FF5A4E; --light-soft:rgba(255,90,78,.14); --ink-2:#C0A9A6; --ink-3:#846966; }
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--field); color: var(--ink); font: 14px/1.5 var(--body);
+  display: grid; grid-template-columns: 320px 1fr; overflow: hidden;
+  transition: background-color .9s var(--ease);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--light); outline-offset: 2px; border-radius: 6px; }
+
+/* ---------------------------------------------------------------- presence (left) */
+.presence {
+  position: relative; display: flex; flex-direction: column; padding: 22px 26px 22px;
+  border-right: 1px solid var(--rule); background: linear-gradient(180deg, var(--field-2), var(--field));
+  transition: background .9s var(--ease);
+}
+.who { display: flex; gap: 4px; }
+.who button {
+  background: none; border: 0; padding: 6px 10px 6px 0; cursor: pointer; color: var(--ink-3);
+  font: 600 15px/1 var(--display); font-stretch: condensed; letter-spacing: .02em; transition: color .3s;
+}
+.who button[aria-pressed="true"] { color: var(--ink); }
+.who button:hover { color: var(--ink-2); }
+.who button[aria-pressed="true"]::after { content: ""; display: block; height: 2px; margin-top: 7px; background: var(--light); border-radius: 2px; }
+
+.orb-wrap { position: relative; flex: 1; min-height: 240px; display: grid; place-items: center; }
+canvas#orb { width: 260px; height: 260px; }
+.name {
+  font: 700 46px/1 var(--display); font-stretch: condensed; letter-spacing: .01em; margin: 0;
+}
+.state { margin: 6px 0 0; font: 400 19px/1.3 var(--display); color: var(--light); min-height: 25px; transition: color .9s; }
+.detail { margin: 2px 0 18px; color: var(--ink-3); font-size: 13px; min-height: 20px; }
+.talk {
+  width: 100%; border: 0; border-radius: 12px; padding: 13px 16px; cursor: pointer;
+  background: var(--light); color: var(--field); font: 600 15px/1 var(--display); letter-spacing: .02em;
+  display: flex; justify-content: space-between; align-items: center; transition: background .9s, transform .15s var(--ease);
+}
+.talk:active { transform: scale(.98); }
+.talk kbd { font: 500 12px var(--body); opacity: .7; }
+.timers { list-style: none; margin: 16px 0 0; padding: 0; }
+.timers li { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--rule); color: var(--ink-2); }
+.timers b { font: 500 15px var(--display); color: var(--ink); font-variant-numeric: tabular-nums; }
+.foot { display: flex; gap: 14px; margin-top: 14px; }
+.link { background: none; border: 0; padding: 0; color: var(--ink-3); cursor: pointer; font-size: 13px; }
+.link:hover { color: var(--ink); }
+
+/* ---------------------------------------------------------------- workspace (right) */
+.work { display: flex; flex-direction: column; min-width: 0; height: 100vh; }
+nav.tabs { display: flex; align-items: flex-end; gap: 26px; padding: 22px 36px 0; border-bottom: 1px solid var(--rule); position: relative; }
+nav.tabs button {
+  background: none; border: 0; padding: 0 0 13px; cursor: pointer; color: var(--ink-3); font-size: 14px; font-weight: 500;
+}
+nav.tabs button[aria-selected="true"] { color: var(--ink); }
+nav.tabs button:hover { color: var(--ink-2); }
+.tab-mark { position: absolute; bottom: -1px; height: 2px; background: var(--light); border-radius: 2px; transition: left .35s var(--ease), width .35s var(--ease), background .9s; }
+.search-hint { margin-left: auto; padding-bottom: 13px; background: none; border: 0; color: var(--ink-3); cursor: pointer; font-size: 13px; }
+.search-hint kbd { border: 1px solid var(--rule-2); border-radius: 5px; padding: 1px 6px; margin-left: 6px; font: 12px var(--body); }
+
+main { flex: 1; overflow: auto; padding: 30px 36px 60px; scroll-behavior: smooth; }
+section.page { display: none; max-width: 860px; }
+section.page.on { display: block; animation: arrive .35s var(--ease); }
+@keyframes arrive { from { opacity: 0; transform: translateY(6px); } }
+h1 { font: 600 30px/1.15 var(--display); font-stretch: condensed; margin: 0 0 6px; letter-spacing: .005em; }
+h2 { font: 600 18px/1.3 var(--display); margin: 34px 0 10px; }
+.lede { color: var(--ink-2); margin: 0 0 24px; max-width: 62ch; }
+.muted { color: var(--ink-3); }
+
+/* Today */
+.numbers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.numbers div { padding: 16px 18px 16px 0; }
+.numbers div + div { padding-left: 18px; border-left: 1px solid var(--rule); }
+.numbers b { display: block; font: 600 30px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.numbers span { color: var(--ink-3); font-size: 13px; }
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: grid; grid-template-columns: 58px 1fr; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.feed time { color: var(--ink-3); font-variant-numeric: tabular-nums; font-size: 13px; padding-top: 1px; }
+.feed .fail { color: var(--bad); }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* buttons and fields */
+.btn {
+  border: 1px solid var(--rule-2); background: transparent; border-radius: 9px; padding: 8px 14px; cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.btn:hover { border-color: var(--light); background: var(--light-soft); }
+.btn.primary { background: var(--light); color: var(--field); border-color: var(--light); font-weight: 600; }
+.btn.danger:hover { border-color: var(--bad); background: rgba(255,122,107,.1); }
+.field { display: grid; grid-template-columns: 220px 1fr; gap: 6px 24px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.field label { font-weight: 500; }
+.field small { grid-column: 1; color: var(--ink-3); font-size: 12.5px; margin-top: -4px; }
+.field .control { grid-column: 2; grid-row: 1 / span 2; }
+select, input[type=text], input[type=password] {
+  width: 100%; max-width: 380px; background: var(--field-2); border: 1px solid var(--rule-2); border-radius: 8px; padding: 8px 10px;
+}
+select:focus, input:focus { border-color: var(--light); outline: none; }
+.switch { appearance: none; width: 40px; height: 22px; border-radius: 22px; background: var(--field-3); position: relative; cursor: pointer; transition: background .2s; border: 1px solid var(--rule-2); }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-2); transition: transform .25s var(--ease), background .2s; }
+.switch:checked { background: var(--light); border-color: var(--light); }
+.switch:checked::after { transform: translateX(18px); background: var(--field); }
+.restart { font-size: 12px; color: var(--warn); margin-left: 8px; }
+
+/* lists */
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.rows li { display: flex; align-items: center; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--rule); }
+.rows li .grow { flex: 1; min-width: 0; }
+.rows li .sub { color: var(--ink-3); font-size: 13px; }
+.rows li .x { opacity: 0; transition: opacity .15s; }
+.rows li:hover .x, .rows li:focus-within .x { opacity: 1; }
+.empty { color: var(--ink-3); padding: 18px 0; border-bottom: 1px solid var(--rule); }
+
+/* conversations: list + reader */
+.split { display: grid; grid-template-columns: 250px 1fr; gap: 28px; max-width: none; }
+.convos { list-style: none; margin: 0; padding: 0; }
+.convos button { width: 100%; text-align: left; background: none; border: 0; border-left: 2px solid transparent; padding: 9px 12px; cursor: pointer; color: var(--ink-2); }
+.convos button[aria-current="true"] { border-left-color: var(--light); color: var(--ink); background: var(--light-soft); }
+.convos small { display: block; color: var(--ink-3); }
+.reader { border-left: 1px solid var(--rule); padding-left: 28px; min-height: 300px; }
+.line { margin: 0 0 12px; max-width: 64ch; }
+.line.you::before { content: "You"; display: block; color: var(--ink-3); font-size: 12px; }
+.line.tron::before { content: attr(data-who); display: block; color: var(--light); font-size: 12px; }
+.line.did { color: var(--ink-3); font-size: 13px; padding-left: 12px; border-left: 2px solid var(--rule-2); }
+
+/* people */
+.cam { width: 100%; max-width: 360px; aspect-ratio: 4/3; border-radius: 12px; background: var(--field-2); display: grid; place-items: center; color: var(--ink-3); overflow: hidden; }
+.cam img { width: 100%; height: 100%; object-fit: cover; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
+
+/* settings: anchors on the left of the page */
+.settings { display: grid; grid-template-columns: 160px 1fr; gap: 30px; max-width: none; }
+.anchors { position: sticky; top: 0; align-self: start; list-style: none; margin: 4px 0 0; padding: 0; }
+.anchors a { display: block; padding: 5px 0; color: var(--ink-3); text-decoration: none; }
+.anchors a:hover { color: var(--ink); }
+.savebar { position: sticky; bottom: -60px; margin-top: 20px; padding: 14px 0 0; background: linear-gradient(transparent, var(--field) 30%); display: flex; gap: 12px; align-items: center; }
+
+/* command palette */
+dialog { border: 1px solid var(--rule-2); border-radius: 14px; background: var(--field-2); color: var(--ink); padding: 0; width: min(560px, 90vw); box-shadow: 0 30px 80px rgba(0,0,0,.5); }
+dialog::backdrop { background: rgba(0,0,0,.45); backdrop-filter: blur(2px); }
+dialog input { width: 100%; max-width: none; border: 0; border-bottom: 1px solid var(--rule); border-radius: 0; background: none; padding: 16px 18px; font-size: 16px; }
+dialog ul { list-style: none; margin: 0; padding: 6px; max-height: 340px; overflow: auto; }
+dialog li { padding: 9px 12px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; }
+dialog li[aria-selected="true"] { background: var(--light-soft); }
+dialog li span { color: var(--ink-3); font-size: 13px; }
+
+.toast { position: fixed; bottom: 22px; right: 26px; background: var(--ink); color: var(--field); padding: 10px 16px; border-radius: 10px; font-weight: 500; transform: translateY(80px); opacity: 0; transition: .35s var(--ease); }
+.toast.on { transform: none; opacity: 1; }
+
+@media (max-width: 900px) { body { grid-template-columns: 250px 1fr; } .numbers { grid-template-columns: 1fr 1fr; } .split, .settings, .pair { grid-template-columns: 1fr; } .anchors { display: none; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body data-who="tron">
+
+<aside class="presence" aria-label="Assistant">
+  <div class="who" role="group" aria-label="Who answers">
+    <button data-id="tron" aria-pressed="true">TRON</button>
+    <button data-id="friday" aria-pressed="false">FRIDAY</button>
+    <button data-id="jarvis" aria-pressed="false">JARVIS</button>
+  </div>
+  <div class="orb-wrap"><canvas id="orb" width="520" height="520" aria-hidden="true"></canvas></div>
+  <h1 class="name" id="name">TRON</h1>
+  <p class="state" id="state" aria-live="polite">Ready</p>
+  <p class="detail" id="detail">Say “hey tron”</p>
+  <button class="talk" id="talk">Talk to TRON <kbd>Ctrl Alt T</kbd></button>
+  <ul class="timers" id="timers"></ul>
+  <div class="foot"><button class="link" data-act="restart">Restart</button><button class="link" data-act="open_folder">Open folder</button><button class="link" data-act="open_browser">TRON browser</button></div>
+</aside>
+
+<div class="work">
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" data-page="today" aria-selected="true">Today</button>
+    <button role="tab" data-page="conversations" aria-selected="false">Conversations</button>
+    <button role="tab" data-page="memory" aria-selected="false">Memory</button>
+    <button role="tab" data-page="people" aria-selected="false">People</button>
+    <button role="tab" data-page="words" aria-selected="false">Words</button>
+    <button role="tab" data-page="settings" aria-selected="false">Settings</button>
+    <button class="search-hint" id="openSearch">Find anything<kbd>Ctrl K</kbd></button>
+    <span class="tab-mark" id="tabMark"></span>
+  </nav>
+
+  <main>
+    <!-- Today -->
+    <section class="page on" id="today" role="tabpanel">
+      <h1 id="greeting">Good evening</h1>
+      <p class="lede" id="todayLede"></p>
+      <div class="numbers" id="numbers"></div>
+      <h2>What happened today</h2>
+      <ul class="feed" id="feed"></ul>
+      <h2>Do something now</h2>
+      <div class="quick">
+        <button class="btn" data-act="test_voice">Hear my voice</button>
+        <button class="btn" data-act="open_browser">Open the TRON browser</button>
+        <button class="btn" data-act="open_log">Open conversation log</button>
+        <button class="btn" data-act="connect_google">Connect Google</button>
+      </div>
+    </section>
+
+    <!-- Conversations -->
+    <section class="page" id="conversations" role="tabpanel">
+      <h1>Conversations</h1>
+      <p class="lede">Everything said and done, newest first. Only text is kept, never recordings.</p>
+      <div class="split">
+        <ul class="convos" id="convos"></ul>
+        <div class="reader" id="reader"></div>
+      </div>
+    </section>
+
+    <!-- Memory -->
+    <section class="page" id="memory" role="tabpanel">
+      <h1>Memory</h1>
+      <p class="lede">What TRON, FRIDAY and JARVIS know about you. All three share it. Forget anything here and it's gone for good.</p>
+      <h2>About you</h2><ul class="rows" id="facts"></ul>
+      <h2>Habits I've noticed</h2><ul class="rows" id="routines"></ul>
+      <h2>Recurring tasks</h2><ul class="rows" id="schedules"></ul>
+      <h2>Skills</h2><ul class="rows" id="skills"></ul>
+      <div class="quick" style="margin-top:12px"><button class="btn" data-act="add_skill">Add a skill</button><button class="btn" data-act="open_skills">Open skills folder</button></div>
+    </section>
+
+    <!-- People -->
+    <section class="page" id="people" role="tabpanel">
+      <h1>People</h1>
+      <p class="lede">Who TRON recognises by face and by voice. It keeps fingerprints, never photos or recordings.</p>
+      <div class="pair">
+        <div>
+          <div class="cam" id="cam">Camera is off</div>
+          <div class="quick" style="margin-top:12px">
+            <input type="text" id="personName" placeholder="Name" style="max-width:160px">
+            <button class="btn" data-act="capture_face">Learn face</button>
+            <button class="btn" data-act="capture_voice">Learn voice</button>
+            <button class="btn" data-act="whos_here">Who's here?</button>
+          </div>
+          <p class="muted" style="font-size:13px;margin:8px 0 0">Learn face: look at the camera, alone. Learn voice: talk for 8 seconds after the chime.</p>
+        </div>
+        <div><h2 style="margin-top:0">Known people</h2><ul class="rows" id="known"></ul></div>
+      </div>
+    </section>
+
+    <!-- Words -->
+    <section class="page" id="words" role="tabpanel">
+      <h1>Words</h1>
+      <p class="lede">Names and terms TRON should spell your way when you dictate, and what you've dictated so far.</p>
+      <div class="quick"><input type="text" id="wordHeard" placeholder="It hears…" style="max-width:200px"><input type="text" id="wordMeant" placeholder="You mean…" style="max-width:200px"><button class="btn" data-act="add_word">Add word</button></div>
+      <h2>Your dictionary</h2><ul class="rows" id="dictionary"></ul>
+      <h2>Dictations</h2><ul class="rows" id="dictations"></ul>
+    </section>
+
+    <!-- Settings -->
+    <section class="page" id="settings" role="tabpanel">
+      <h1>Settings</h1>
+      <p class="lede">Changes save when you press Save. A few need a restart; they say so.</p>
+      <div class="settings">
+        <ul class="anchors"><li><a href="#s-brain">Brain and voice</a></li><li><a href="#s-sound">Sound</a></li><li><a href="#s-wake">Waking and looks</a></li><li><a href="#s-phone">Phone</a></li><li><a href="#s-privacy">Privacy</a></li><li><a href="#s-keys">Keys</a></li></ul>
+        <form id="settingsForm"></form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="palette" aria-label="Find anything"><input id="q" placeholder="Find a setting, page or action" autocomplete="off"><ul id="results" role="listbox"></ul></dialog>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+// ---------------------------------------------------------------- data: pywebview's bridge, or sample data in a browser
+const SAMPLE = {
+  overview: { who: "tron", assistants: [{id:"tron",name:"TRON"},{id:"friday",name:"FRIDAY"},{id:"jarvis",name:"JARVIS"}],
+    state: "IDLE", user: "Shivansh", hotkey: "Ctrl Alt T",
+    timers: [["Tea", 312], ["Stand up", 1490]],
+    numbers: [[262, "things done"], [8, "facts remembered"], [57, "conversations"], ["1.4 s", "typical reply time"]],
+    feed: [["23:51","Connected Cloudflare WARP for you"],["23:49","Opened Cloudflare WARP"],["22:10","Played Karan Aujla on Spotify"],["21:42","Couldn't find “Valorant tracker” on the page", true],["20:03","Set a 5-minute tea timer"]] },
+  conversations: [{id:"c3", when:"Today 23:49", preview:"phone can you observe my screen?"},{id:"c2", when:"Today 22:10", preview:"play some hindi music"},{id:"c1", when:"Yesterday 19:02", preview:"set a timer for five minutes"}],
+  conversation: [["you","phone can you observe my screen?"],["tron","Let me take a look, sir."],["did","look_at_screen()"],["tron","You're on the Cloudflare app and it shows connected. Want me to check something specific?"]],
+  memory: { facts: [["name","Shivansh"],["hindi_music","Karan Aujla"],["browser","Brave"],["game","Valorant — don't interrupt while playing"]],
+    routines: [["Opens Spotify in the evening", 4],["Plays Valorant on Fridays at night", 3]],
+    schedules: [["a1","09:00 weekdays","Read me my unread mail"]], skills: [["morning-routine","Open mail, calendar and the news"]] },
+  people: [["Shivansh","face and voice"],["Mayukh","face"]],
+  words: { dictionary: [["cloud code","Claude Code"],["drone","TRON"]], dictations: [["Today 18:20","Draft the release notes for the TRON update and send them to the team"]] },
+  settings: { values: { brain:"gemini", local_brain_enabled:false, voice_name:"Orus", local_voice:"david", mic_device:"", speaker_device:"", wake_mode:"openwakeword", ui_model:"dust-orb", camera_enabled:true, screen_enabled:true, announce_calls:true, announce_messages:false, hotspot_ssid:"", gemini_api_key_set:true },
+    options: { brain:[["gemini","Gemini (online, best)"],["local","On this PC only"]], voice_name:["Orus","Puck","Charon","Kore","Fenrir","Aoede","Leda","Zephyr"].map(v=>[v,v]),
+      local_voice:[["david","David"],["zira","Zira"],["hazel","Hazel"]], mic_device:[["","Follow Windows (Intel Microphone Array)"]], speaker_device:[["","Follow Windows (Realtek Speakers)"]],
+      wake_mode:[["openwakeword","Wake word and hotkey"],["hotkey","Hotkey only"]], ui_model:[["dust-orb","Dust Orb"],["aurora-orb","Aurora Orb"],["halo-ring","Halo Ring"]] } },
+};
+// In TRON the page is served with a token and calls panel_api.py; opened as a plain file it shows sample data.
+const api = new Proxy({}, { get: (_, name) => async (...args) => {
+  if (window.TRON_TOKEN) {
+    const r = await fetch("/api/" + name, { method: "POST", headers: { "X-Tron-Token": window.TRON_TOKEN }, body: JSON.stringify(args) });
+    return r.json();
+  }
+  const sample = { overview: SAMPLE.overview, status: SAMPLE.overview, conversations: SAMPLE.conversations, conversation: SAMPLE.conversation, memory: SAMPLE.memory,
+                   people: SAMPLE.people, words: SAMPLE.words, settings: SAMPLE.settings };
+  if (name === "switch_assistant") { SAMPLE.overview.who = args[0]; return SAMPLE.overview; }
+  return name in sample ? sample[name] : { ok: true, message: "Done" };
+}});
+
+const $ = (s, el = document) => el.querySelector(s), $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const toast = msg => { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("on"), 2400); };
+const NAMES = { tron: "TRON", friday: "FRIDAY", jarvis: "JARVIS" };
+const STATES = { OFF: "Not running", IDLE: "Ready", LISTENING: "Listening…", THINKING: "Thinking…", SPEAKING: "Speaking", ACTING: "On it", DICTATING: "Taking dictation", ERROR: "Something went wrong" };
+let who = "tron", state = "IDLE";
+
+// ---------------------------------------------------------------- the orb: particles in the identity's light
+const orb = (() => {
+  const c = $("#orb"), g = c.getContext("2d"), W = c.width, R = W * 0.3, N = 900, still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const p = Array.from({ length: N }, () => ({ a: Math.random() * 6.283, b: Math.acos(2 * Math.random() - 1), r: R * (0.55 + 0.45 * Math.cbrt(Math.random())), s: 0.4 + Math.random() }));
+  let t = 0, energy = 0.15, target = 0.15;
+  const level = { IDLE: .15, LISTENING: .55, THINKING: .35, SPEAKING: .8, ACTING: .45, DICTATING: .4, ERROR: .1 };
+  function frame() {
+    const light = getComputedStyle(document.body).getPropertyValue("--light").trim();
+    energy += (target - energy) * 0.06; t += 0.004 + energy * 0.012;
+    g.clearRect(0, 0, W, W);
+    const glow = g.createRadialGradient(W/2, W/2, 0, W/2, W/2, R * 1.25);
+    glow.addColorStop(0, light + "26"); glow.addColorStop(1, light + "00");
+    g.fillStyle = glow; g.fillRect(0, 0, W, W);
+    g.fillStyle = light;
+    for (const q of p) {
+      const wob = 1 + Math.sin(t * 3 * q.s + q.a * 4) * 0.06 * (0.4 + energy * 2);
+      const a = q.a + t * q.s, x = Math.sin(q.b) * Math.cos(a), y = Math.cos(q.b), z = Math.sin(q.b) * Math.sin(a);
+      const k = q.r * wob, depth = (z + 1) / 2;
+      g.globalAlpha = 0.25 + depth * 0.75;
+      const size = 1.1 + depth * 2.2;
+      g.fillRect(W/2 + x * k - size/2, W/2 + y * k * 0.96 - size/2, size, size);
+    }
+    g.globalAlpha = 1;
+    if (!still) requestAnimationFrame(frame);
+  }
+  frame();
+  return { set(s) { target = level[s] ?? .2; if (still) frame(); } };
+})();
+
+// ---------------------------------------------------------------- identity
+function setWho(id, announce) {
+  who = id; document.body.dataset.who = id;
+  $$(".who button").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === id));
+  $("#name").textContent = NAMES[id]; $("#talk").firstChild.textContent = `Talk to ${NAMES[id]} `;
+  document.title = NAMES[id]; placeMark();
+  if (announce) toast(`${NAMES[id]} is answering now`);
+}
+$$(".who button").forEach(b => b.onclick = async () => { if (b.dataset.id === who) return; setWho(b.dataset.id, true); await api.switch_assistant(b.dataset.id); });
+
+// ---------------------------------------------------------------- tabs
+function placeMark() { const on = $('nav.tabs [aria-selected="true"]'), m = $("#tabMark"); m.style.left = on.offsetLeft + "px"; m.style.width = on.offsetWidth + "px"; }
+function show(page) {
+  $$("nav.tabs [role=tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.page === page));
+  $$("section.page").forEach(s => s.classList.toggle("on", s.id === page));
+  $("main").scrollTo({ top: 0, behavior: "instant" }); placeMark(); LOAD[page]?.();
+}
+$$("nav.tabs [role=tab]").forEach(b => b.onclick = () => show(b.dataset.page));
+addEventListener("resize", placeMark);
+
+// ---------------------------------------------------------------- pages
+const rows = (el, items, render, empty) => { el.innerHTML = items.length ? items.map(render).join("") : `<li class="empty">${empty}</li>`; };
+const LOAD = {
+  async today() {
+    const o = await api.overview(), h = new Date().getHours();
+    $("#greeting").textContent = `${h < 5 ? "Still up" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"}, ${o.user}`;
+    $("#todayLede").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+    $("#numbers").innerHTML = o.numbers.map(([n, l]) => `<div><b>${esc(n)}</b><span>${esc(l)}</span></div>`).join("");
+    rows($("#feed"), o.feed, ([t, text, fail]) => `<li><time>${esc(t)}</time><span class="${fail ? "fail" : ""}">${esc(text)}</span></li>`, "Nothing yet today. Say “hey tron” to start.");
+  },
+  async conversations() {
+    const list = await api.conversations();
+    rows($("#convos"), list, c => `<li><button data-id="${esc(c.id)}">${esc(c.preview)}<small>${esc(c.when)}</small></button></li>`, "No conversations yet.");
+    $$("#convos button").forEach(b => b.onclick = () => openConvo(b));
+    if (list.length) openConvo($("#convos button"));
+  },
+  async memory() {
+    const m = await api.memory();
+    rows($("#facts"), m.facts, ([k, v]) => `<li><div class="grow">${esc(v)}<div class="sub">${esc(k.replace(/_/g, " "))}</div></div><button class="btn danger x" data-forget="${esc(k)}">Forget</button></li>`, "Nothing yet. Tell TRON “remember that…”.");
+    rows($("#routines"), m.routines, ([d, n]) => `<li><div class="grow">${esc(d)}<div class="sub">seen on ${n} days · a guess, not a fact</div></div></li>`, "Nothing yet. A habit shows up after it's seen on three different days.");
+    rows($("#schedules"), m.schedules, ([id, when, task]) => `<li><div class="grow">${esc(task)}<div class="sub">${esc(when)}</div></div><button class="btn danger x" data-cancel="${esc(id)}">Cancel</button></li>`, "None. Say “every weekday at 9, read me my mail”.");
+    rows($("#skills"), m.skills, ([n, d]) => `<li><div class="grow">${esc(n)}<div class="sub">${esc(d)}</div></div><button class="btn danger x" data-skill="${esc(n)}">Remove</button></li>`, "No skills yet.");
+    $$("[data-forget]").forEach(b => b.onclick = async () => { b.closest("li").remove(); toast((await api.forget_fact(b.dataset.forget)).message); });
+    $$("[data-cancel]").forEach(b => b.onclick = async () => { b.closest("li").remove(); toast((await api.cancel_schedule(b.dataset.cancel)).message); });
+    $$("[data-skill]").forEach(b => b.onclick = async () => { b.closest("li").remove(); toast((await api.remove_skill(b.dataset.skill)).message); });
+  },
+  async people() {
+    rows($("#known"), await api.people(), ([n, how]) => `<li><div class="grow">${esc(n)}<div class="sub">knows their ${esc(how)}</div></div><button class="btn danger x" data-person="${esc(n)}">Forget</button></li>`, "Nobody yet. Type a name and press Learn face.");
+    $$("[data-person]").forEach(b => b.onclick = async () => { b.closest("li").remove(); toast((await api.forget_person(b.dataset.person)).message); });
+  },
+  async words() {
+    const w = await api.words();
+    rows($("#dictionary"), w.dictionary, ([heard, meant]) => `<li><div class="grow">${esc(meant)}<div class="sub">when it hears “${esc(heard)}”</div></div><button class="btn danger x" data-word="${esc(heard)}">Remove</button></li>`, "No words yet.");
+    rows($("#dictations"), w.dictations, ([when, text]) => `<li><div class="grow">${esc(text)}<div class="sub">${esc(when)}</div></div><button class="btn x" data-copy="${esc(text)}">Copy</button></li>`, "Nothing dictated yet. Say “take a dictation”.");
+    $$("[data-word]").forEach(b => b.onclick = async () => { b.closest("li").remove(); toast((await api.remove_word(b.dataset.word)).message); });
+    $$("[data-copy]").forEach(b => b.onclick = async () => { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); });
+  },
+  async settings() { renderSettings(await api.settings()); },
+};
+
+async function openConvo(btn) {
+  $$("#convos button").forEach(b => b.setAttribute("aria-current", b === btn));
+  const lines = await api.conversation(btn.dataset.id);
+  $("#reader").innerHTML = lines.map(([k, t]) => `<p class="line ${k}" data-who="${NAMES[who]}">${esc(t)}</p>`).join("");
+}
+
+// ---------------------------------------------------------------- settings form, grouped by meaning
+const SETTINGS = [
+  ["s-brain", "Brain and voice", [
+    ["brain", "Brain", "Where thinking happens", "select", true],
+    ["local_brain_enabled", "Local brain", "Use the model on this PC when offline", "switch"],
+    ["local_model", "Local model", "The Ollama model the local brain uses", "select", true],
+    ["voice_name", "Online voice", "Each assistant has its own; this is the fallback", "select", true],
+    ["local_voice", "Offline voice", "Used when TRON speaks without Gemini", "select"],
+    ["memory_enabled", "Learn about me", "Remember preferences and habits from conversations", "switch"]]],
+  ["s-sound", "Sound", [
+    ["mic_device", "Microphone", "Follows Windows unless you pick one", "select", true],
+    ["speaker_device", "Speaker", "Follows Windows unless you pick one", "select", true]]],
+  ["s-wake", "Waking and looks", [
+    ["wake_mode", "Waking", "“hey tron”, “hey jarvis”, or only the hotkey", "select", true],
+    ["hotkey", "Hotkey", "Press it to talk, e.g. ctrl+alt+t", "text", true],
+    ["ui_model", "Desktop orb", "What sits on your desktop", "select", true],
+    ["autostart", "Start with Windows", "TRON starts when you sign in", "switch"]]],
+  ["s-phone", "Phone", [
+    ["announce_calls", "Announce calls", "“Boss, Mayukh is calling you on WhatsApp”", "switch", true],
+    ["announce_messages", "Announce messages", "Off by default so games aren't interrupted", "switch"],
+    ["hotspot_ssid", "Phone hotspot", "Joined automatically when the internet drops", "text", true]]],
+  ["s-privacy", "Privacy", [
+    ["camera_enabled", "Camera", "Lets TRON look and recognise faces when you ask", "switch", true],
+    ["screen_enabled", "Screen", "Lets TRON look at your screen when you ask", "switch", true],
+    ["brain_debug", "Developer notes", "Write each decision into Conversations", "switch"]]],
+  ["s-keys", "Keys", [
+    ["gemini_api_key", "Gemini key", "Free at aistudio.google.com. Stored only on this PC", "password", true],
+    ["openrouter_api_key", "OpenRouter key", "Optional, for dictation", "password", true],
+    ["smtp_host", "Email server", "e.g. smtp.gmail.com, for sending email", "text", true],
+    ["smtp_user", "Email address", "The account TRON sends from", "text", true],
+    ["smtp_app_password", "Email app password", "A Gmail app password, not your real one", "password", true]]],
+];
+function renderSettings({ values, options }) {
+  $("#settingsForm").innerHTML = SETTINGS.map(([id, title, fields]) => `<h2 id="${id}">${title}</h2>` + fields.map(([k, label, hint, kind, restart]) => {
+    let control;
+    if (kind === "select") control = `<select name="${k}">${(options[k] || []).map(([v, l]) => `<option value="${esc(v)}" ${String(values[k] ?? "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    else if (kind === "switch") control = `<input type="checkbox" class="switch" name="${k}" ${values[k] ? "checked" : ""}>`;
+    else if (kind === "password") control = `<input type="password" name="${k}" placeholder="${values[k + "_set"] ? "Saved. Type to replace" : "Paste your key"}">`;
+    else control = `<input type="text" name="${k}" value="${esc(values[k] ?? "")}">`;
+    return `<div class="field"><label for="${k}">${label}${restart ? '<span class="restart" title="Takes effect after a restart">restart</span>' : ""}</label><small>${hint}</small><div class="control">${control}</div></div>`;
+  }).join("")).join("") + `<div class="savebar"><button class="btn primary" type="submit">Save settings</button><span class="muted" id="saveNote"></span></div>`;
+  $$("#settingsForm input, #settingsForm select").forEach(el => el.id = el.name);
+}
+$("#settingsForm").onsubmit = async e => {
+  e.preventDefault();
+  const patch = {};
+  $$("#settingsForm [name]").forEach(el => { if (el.type === "password" && !el.value) return; patch[el.name] = el.type === "checkbox" ? el.checked : el.value; });
+  const r = await api.save_settings(patch); toast(r.message || "Saved");
+  if (r.ok) $$("#settingsForm input[type=password]").forEach(el => el.value = "");
+};
+
+// ---------------------------------------------------------------- actions
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, arg = { capture_face: $("#personName").value, capture_voice: $("#personName").value, add_word: [$("#wordHeard").value, $("#wordMeant").value] }[act];
+  if ((act === "capture_face" || act === "capture_voice") && !arg) { $("#personName").focus(); return toast("Type their name first"); }
+  b.disabled = true; const r = await api.action(act, arg ?? null); b.disabled = false;
+  toast(r.message || "Done"); if (act === "add_word") LOAD.words();
+  if (r.image) $("#cam").innerHTML = `<img alt="${esc(r.message)}" src="${r.image}">`;
+  if (act === "capture_face" || act === "capture_voice") LOAD.people();
+});
+$("#talk").onclick = () => api.action("talk", null);
+
+// ---------------------------------------------------------------- Ctrl+K: every page, setting and action
+const INDEX = [...$$("nav.tabs [role=tab]").map(b => [b.textContent, "Page", () => show(b.dataset.page)]),
+  ...SETTINGS.flatMap(([id, , fields]) => fields.map(([k, label]) => [label, "Setting", () => { show("settings"); setTimeout(() => { $("#" + k)?.focus(); }, 120); }])),
+  ...$$("[data-act]").map(b => [b.textContent.trim(), "Action", () => b.click()]),
+  ...Object.entries(NAMES).map(([id, n]) => [`Switch to ${n}`, "Assistant", () => $(`.who [data-id=${id}]`).click()])]
+  .filter((x, i, all) => all.findIndex(y => y[0] === x[0]) === i);
+let hits = [], sel = 0;
+function search() {
+  const q = $("#q").value.toLowerCase().trim();
+  hits = INDEX.filter(([n]) => n.toLowerCase().includes(q)).slice(0, 12); sel = 0; drawHits();
+}
+function drawHits() { $("#results").innerHTML = hits.map(([n, kind], i) => `<li role="option" aria-selected="${i === sel}" data-i="${i}">${esc(n)}<span>${kind}</span></li>`).join(""); }
+function pick(i) { $("#palette").close(); hits[i]?.[2](); }
+$("#q").oninput = search;
+$("#q").onkeydown = e => { if (e.key === "ArrowDown") { sel = Math.min(sel + 1, hits.length - 1); drawHits(); e.preventDefault(); } if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); drawHits(); e.preventDefault(); } if (e.key === "Enter") pick(sel); };
+$("#results").onclick = e => { const li = e.target.closest("li"); if (li) pick(+li.dataset.i); };
+const openPalette = () => { $("#q").value = ""; search(); $("#palette").showModal(); $("#q").focus(); };
+$("#openSearch").onclick = openPalette;
+addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openPalette(); } });
+
+// ---------------------------------------------------------------- live status
+function fmt(s) { s = Math.ceil(s); const m = Math.floor(s / 60), h = Math.floor(m / 60); return h ? `${h}:${String(m % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}` : `${m}:${String(s % 60).padStart(2, "0")}`; }
+async function pulse() {
+  try {
+    const o = await api.status();
+    if (o && o.who && o.who !== who) setWho(o.who, true);
+    if (o && o.state && o.state !== state) { state = o.state; $("#state").textContent = STATES[state] || state; orb.set(state); }
+    if (o) $("#detail").textContent = o.detail || (state === "IDLE" ? (o.wake ? `Say “hey ${who}” or press ${o.hotkey}` : `Press ${o.hotkey} to talk`) : state === "OFF" ? "Settings still work" : "");
+    if (o && o.restart_label) $('[data-act="restart"]').textContent = o.restart_label;
+    if (o) $("#timers").innerHTML = (o.timers || []).map(([n, s]) => `<li>${esc(n)}<b>${fmt(s)}</b></li>`).join("");
+  } catch (_) {}
+  setTimeout(pulse, 600);
+}
+
+async function start() {
+  const o = await api.overview();
+  setWho(o.who); LOAD.today(); pulse();
+}
+if (window.pywebview) start(); else addEventListener("pywebviewready", start), setTimeout(() => { if (!window.pywebview) start(); }, 300);
+</script>
+</body>
+</html>

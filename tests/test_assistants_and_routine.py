@@ -66,12 +66,3 @@ def test_timers_survive_a_restart(tmp_path, monkeypatch):
     assert [label for label, _ in timers.snapshot()] == ["Tea"]
 
 
-def test_each_assistant_paints_the_panel_its_own_colour():
-    import control_panel
-    seen = set()
-    for who in ("tron", "friday", "jarvis"):
-        control_panel._use_theme(who)
-        seen.add(control_panel.ACCENT)
-        assert control_panel.STATES["LISTENING"][1] == control_panel.ACCENT
-    assert seen == {"#2ee6ff", "#ff4fa3", "#ff3b3b"}
-    control_panel._use_theme("tron")

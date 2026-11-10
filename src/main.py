@@ -164,7 +164,7 @@ def _selftest() -> None:
 
     def new_modules():
         import importlib
-        for module in ("control_panel", "dictation", "timers", "brain", "music", "convo_log", "computer", "skills", "offline", "local_brain",
+        for module in ("panel_api", "dictation", "timers", "brain", "music", "convo_log", "computer", "skills", "offline", "local_brain",
                        "decision", "tool_registry", "memory_service", "browser_session", "browser_inspect",
                        "browser_intel", "watcher", "faces", "voices", "sherpa_onnx", "onnxruntime"):
             importlib.import_module(module)
@@ -230,6 +230,11 @@ def _only_instance(wait_ms: int = 15000) -> bool:
 def main() -> None:
     if "--list-mics" in sys.argv:
         audio_io.print_audio_devices()
+        return
+
+    if "--panel-window" in sys.argv:   # the control panel's own window process (panel_api.WebPanel starts it)
+        import panel_api
+        panel_api.run_window(sys.argv[sys.argv.index("--panel-window") + 1])
         return
 
     if "--panel" in sys.argv:
@@ -416,8 +421,8 @@ def main() -> None:
         for trigger in triggers:
             trigger.start()
         try:
-            from control_panel import ControlPanel
-            panel.append(ControlPanel(orb.root, machine, on_restart=request_restart))
+            from panel_api import WebPanel
+            panel.append(WebPanel(machine, on_restart=request_restart))
             import browser_intel
             browser_intel.on_status = panel[0].browser_status   # "Inspecting the page...", "Verifying..."
         except Exception:
@@ -465,20 +470,15 @@ def _launch_tron() -> None:
 def _panel_only() -> None:
     """`TRON.exe --panel`: just the control panel, without starting the assistant. For changing settings
     while TRON is quit, or when a broken setting keeps it from starting."""
-    import tkinter as tk
-    from control_panel import ControlPanel
+    import os
+    import panel_api
 
-    ctypes.windll.user32.SetProcessDPIAware()
-    root = tk.Tk()
-    root.withdraw()
     def start_tron():
         _launch_tron()
-        root.destroy()
+        os._exit(0)   # closes this settings-only window; the TRON that just started opens its own
 
-    panel = ControlPanel(root, on_restart=start_tron, restart_label="Start TRON")
-    panel.win.protocol("WM_DELETE_WINDOW", root.destroy)
-    panel.show()
-    root.mainloop()
+    server = panel_api.Server(panel_api.Api(on_restart=start_tron, restart_label="Start TRON"))
+    panel_api.run_window(server.url)
 
 
 def _quit(triggers, tray: TrayUI, orb: OrbUI, dash=None) -> None:

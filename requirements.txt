@@ -20,7 +20,7 @@ livekit>=1.0
 # local mode: TRON's own voice (Kokoro) — the local brain itself runs in Ollama
 kokoro-onnx>=0.4
 # control panel look
-customtkinter>=5.2
+pywebview>=6.2.1
 # the TRON browser: Playwright drives Brave over CDP (no browser download needed)
 playwright>=1.50
 # who is speaking: speaker embeddings (3D-Speaker CAM++)

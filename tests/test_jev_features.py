@@ -250,36 +250,6 @@ def test_every_new_tool_is_declared_and_handled():
 
 
 # --------------------------------------------------------------------------- control panel
-def test_panel_builds_every_tab_and_saves_only_what_changed(app_dir, monkeypatch, tk_root):
-    import control_panel
-
-    cfg_path = app_dir / "config.json"
-    cfg_path.write_text(json.dumps({"gemini_api_key": "k", "voice_name": "Puck", "hotkey": "ctrl+alt+t"}),
-                        encoding="utf-8")
-    monkeypatch.setattr(config, "CONFIG_PATH", cfg_path)
-    monkeypatch.setattr(control_panel.autostart, "is_enabled", lambda: False)
-    monkeypatch.setattr(control_panel.autostart, "disable", lambda: None)
-    root = tk_root
-    try:
-        panel = control_panel.ControlPanel(root)
-        for key, _title in control_panel.TABS:
-            panel._select_tab(key)
-            root.update()
-        panel._select_tab("settings")
-        panel.settings_vars["camera_enabled"].set(True)
-        panel._save_settings()
-        saved = json.loads(cfg_path.read_text(encoding="utf-8"))
-        assert saved["camera_enabled"] is True
-        assert "active_assistant" not in saved      # untouched, so not written: it would override the voice
-        assert saved["voice_name"] == "Puck"
-        panel.on_state_change(sm.State.DICTATING)
-        root.update()
-        time.sleep(0.15)
-        root.update()
-        assert panel.status.cget("text") == "Dictating"
-    finally:
-        panel.win.destroy()
-
 
 def test_the_stop_phrase_is_not_typed_into_the_dictation():
     assert dictation.strip_stop_phrase("Send the report by Friday. Hey Drone.") == "Send the report by Friday."
@@ -362,22 +332,6 @@ def test_an_openrouter_account_without_credit_is_skipped_after_the_first_try(mon
     transcribe = dictation.best_transcriber("g", "o")
     assert [transcribe(b"w") for _ in range(3)] == ["ok", "ok", "ok"]
     assert calls == ["openrouter"]
-
-
-def test_the_panel_restart_button_hands_over_to_main(app_dir, monkeypatch, tk_root):
-    import control_panel
-    monkeypatch.setattr(config, "CONFIG_PATH", app_dir / "config.json")
-    root = tk_root
-    try:
-        asked = []
-        panel = control_panel.ControlPanel(root, on_restart=lambda: asked.append(True))
-        panel._restart()
-        assert asked == [True] and panel.status.cget("text").startswith("Restarting")
-        no_button = control_panel.ControlPanel(root)   # without a restart handler there is no button to press
-        assert no_button.on_restart is None
-    finally:
-        for child in root.winfo_children():
-            child.destroy()
 
 
 def test_relaunch_asks_the_new_exe_to_unpack_afresh(monkeypatch):

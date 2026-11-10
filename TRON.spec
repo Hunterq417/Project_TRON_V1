@@ -35,7 +35,7 @@ hiddenimports += ['psutil']
 # Offline mode: speech recognised on this PC (Parakeet via onnx-asr; the model lives next to the exe in
 # models\parakeet-tdt-0.6b-v2). LiveKit: WebRTC echo cancellation, a native library.
 # Local mode's voice: Kokoro (model in models\kokoro next to the exe) and espeak-ng for pronunciation.
-for _pkg in ('onnx_asr', 'livekit', 'kokoro_onnx', 'espeakng_loader', 'phonemizer', 'customtkinter', 'playwright', 'sherpa_onnx',
+for _pkg in ('onnx_asr', 'livekit', 'kokoro_onnx', 'espeakng_loader', 'phonemizer', 'playwright', 'sherpa_onnx',
              'googleapiclient', 'google_auth_oauthlib', 'bleak', 'winrt'):
     tmp_ret = collect_all(_pkg)
     datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
@@ -47,6 +47,10 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 # the Dust Orb face (three.js page, rendered by a headless Brave)
 datas += [('src/assets/dust_orb', 'assets/dust_orb')]
+# the control panel page (panel_api.py serves it; WebView2 shows it via pywebview)
+datas += [('src/assets/panel', 'assets/panel')]
+tmp_ret = collect_all('webview')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['src/main.py'],
