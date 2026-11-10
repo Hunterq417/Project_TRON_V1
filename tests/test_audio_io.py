@@ -195,13 +195,22 @@ def test_resolve_input_is_case_insensitive_and_passes_through(monkeypatch):
     monkeypatch.setattr(audio_io, "input_devices", lambda: [(7, "HyperX Cloud II", 1)])
     assert audio_io.resolve_input("hyperx") == 7
     assert audio_io.resolve_input(3) == 3
-    assert audio_io.resolve_input(None) is None
+    monkeypatch.setattr(audio_io, "windows_default_input", lambda: 5)
+    assert audio_io.resolve_input(None) == 5            # unset follows Windows' current mic
 
 
-def test_resolve_input_rejects_a_name_that_matches_nothing(monkeypatch):
+def test_a_mic_that_is_not_connected_falls_back_to_windows_default(monkeypatch):
+    """A headset named in config.json but unplugged used to stop TRON with an error box; it now just uses
+    the mic Windows is using."""
     monkeypatch.setattr(audio_io, "input_devices", lambda: [(1, "Some Mic", 1)])
-    with pytest.raises(ValueError, match="list-mics"):
-        audio_io.resolve_input("not-a-real-device")
+    monkeypatch.setattr(audio_io, "windows_default_input", lambda: 1)
+    assert audio_io.resolve_input("Headset Microphone (HyperX Clou") == 1
+
+
+def test_a_speaker_that_is_not_connected_falls_back_to_windows_default(monkeypatch):
+    monkeypatch.setattr(audio_io, "output_devices", lambda: [(4, "Speaker (Realtek)", 2)])
+    monkeypatch.setattr(audio_io, "windows_default_output", lambda: 4)
+    assert audio_io.resolve_output("HyperX Cloud II") == 4
 
 
 def test_resolve_output_matches_by_name(monkeypatch):

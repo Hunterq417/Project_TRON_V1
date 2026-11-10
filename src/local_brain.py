@@ -389,6 +389,7 @@ class LocalSession:
         self.brain = local_brain or LocalBrain(persona, getattr(cfg, "local_model", None) or DEFAULT_MODEL, cfg)
         self.guard = brain.Guard()
         self.dictate_after = False
+        self.handed_over = False   # "switch to Jarvis": end here, the state machine starts JARVIS
         self._hear = hear or (lambda: self._listen(offline))
         import voices
         self._speaker = voices.Collector()
@@ -437,6 +438,9 @@ class LocalSession:
 
     def run_tool(self, name, args):
         import perception
+        if name == "not_for_me":
+            self.handed_over = True    # ends the conversation quietly; nothing is said
+            return "ok, silent"
         if name == "start_dictation":
             self.dictate_after = True
             return "Dictation starts after the chime. Say hey tron or press the hotkey when you're done, sir."
@@ -449,6 +453,8 @@ class LocalSession:
         handler = tools.TOOL_DISPATCH.get(name)
         if handler is None:
             return f"there is no tool called {name}"
+        tools.routine.observe(name, args, self.cfg)
+        self.handed_over = self.handed_over or name == "switch_assistant"
         try:
             return str(handler(args, self.cfg))
         except Exception as exc:
@@ -483,7 +489,7 @@ class LocalSession:
                 self.log.append(("note", f"local brain failed: {type(exc).__name__}: {exc}"))
             self.guard.turn_over()
             self.say(answer)
-            if self.dictate_after:
+            if self.dictate_after or self.handed_over:
                 break
         self._set_state("IDLE")
         lines = [("YOU:  " if kind == "user" else "TRON: ") + text for kind, text in self.log if kind in ("user", "assistant")]

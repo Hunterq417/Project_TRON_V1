@@ -54,15 +54,15 @@ def update_config_file(patch: dict) -> dict:
 
 # Assistant profiles. Each is a name, a voice and optionally its own persona, so
 # one install can answer as more than one character. Only the active one is
-# loaded; switching is done from the dashboard (and, later, by voice).
+# loaded; switching is done from the dashboard or by voice (tools.switch_assistant).
 #
 # Personas are optional on purpose: a profile with no persona file of its own
 # falls back to the default one, so selecting JARVIS changes the voice
 # immediately and picks up its own character as soon as you write it.
 DEFAULT_ASSISTANTS = [
-    {"id": "tron", "name": "TRON", "voice": "Orus", "persona_path": "persona.txt"},
-    {"id": "jarvis", "name": "JARVIS", "voice": "Charon", "persona_path": "personas/jarvis.txt"},
-    {"id": "friday", "name": "FRIDAY", "voice": "Aoede", "persona_path": "personas/friday.txt"},
+    {"id": "tron", "name": "TRON", "voice": "Orus", "local_voice": "david", "persona_path": "persona.txt"},
+    {"id": "jarvis", "name": "JARVIS", "voice": "Charon", "local_voice": "david", "persona_path": "personas/jarvis.txt"},
+    {"id": "friday", "name": "FRIDAY", "voice": "Aoede", "local_voice": "zira", "persona_path": "personas/friday.txt"},
 ]
 
 
@@ -172,6 +172,8 @@ def _apply_assistant(cfg: "Config", assistant: dict) -> "Config":
     voice = assistant.get("voice")
     if voice:
         cfg.voice_name = voice
+    if assistant.get("local_voice"):
+        cfg.local_voice = assistant["local_voice"]   # the voice when the local brain speaks
     persona = assistant.get("persona_path")
     if persona and resolve_path(persona).is_file():
         cfg.persona_path = persona

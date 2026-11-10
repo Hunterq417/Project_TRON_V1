@@ -32,3 +32,4 @@ dist_next/
 # local tool state
 .gstack/
 .claude/
+google_client_secret.json

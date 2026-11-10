@@ -8,12 +8,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import audio_io
+import json
 import config as config_module
 import setup_wizard
 from orb_ui import OrbUI
 import state_manager
 from state_manager import TronStateMachine
 from wake_trigger import HotkeyTrigger, OpenWakeWordTrigger
+import wake_trigger
 from tray_ui import TrayUI
 from dashboard import Dashboard
 import timers
@@ -54,17 +56,8 @@ def _report_microphone(cfg) -> None:
     try:
         name = audio_io.microphone_name(cfg.mic_device)
     except Exception as exc:
-        # A device that cannot even be resolved is unambiguous, unlike a quiet
-        # one, so this is the only microphone problem worth interrupting for.
-        advice = (
-            f'The configured microphone could not be found ({exc}).\n\n'
-            'Run TRON.exe --list-mics and set "mic_device" in config.json to one '
-            "of the devices it lists."
-        )
-        print("WARNING: " + advice)
-        # The exe is built windowed, so print() reaches nobody who launches TRON
-        # by double-clicking it.
-        _warn_box("TRON: microphone problem", advice)
+        # No dialog: TRON follows Windows' own default mic, so there's nothing for the user to fix here.
+        print(f"Microphone: Windows default ({exc})")
         return
     print(f"Microphone: {name}")
     try:
@@ -214,6 +207,25 @@ def _selftest() -> None:
         pass
 
 
+_instance_lock = []
+
+
+def _only_instance(wait_ms: int = 15000) -> bool:
+    """True when this is the only TRON running. A second launch (a double-click while TRON is already up)
+    waits briefly - Restart starts the new TRON a moment before the old one exits - then gives way."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel32.CreateMutexW(None, True, "Local\\TRON_single_instance")
+    if not handle:
+        return True      # can't tell: better to run than to refuse
+    if kernel32.GetLastError() == 183:      # ERROR_ALREADY_EXISTS: someone else owns it
+        if kernel32.WaitForSingleObject(ctypes.c_void_p(handle), wait_ms) not in (0, 0x80):
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+            return False
+    _instance_lock.append(handle)            # held for the life of this process
+    return True
+
+
 def main() -> None:
     if "--list-mics" in sys.argv:
         audio_io.print_audio_devices()
@@ -243,6 +255,9 @@ def main() -> None:
             cfg.mic_device = int(choice) if choice.lstrip("-").isdigit() else choice
         _test_mic(cfg)
         return
+
+    if not _only_instance():
+        return      # TRON is already running: two would both answer every "hey tron"
 
     if not config_module.CONFIG_PATH.exists():
         setup_wizard.run_first_time_setup()
@@ -314,10 +329,28 @@ def main() -> None:
         announce(f"Reminder: {label}." if label else
                  f"Your {timers.say_duration(timer['secs'])} timer is up.")
 
-    timers.start_loop(timer_done)
+    timers.start_loop(timer_done, config_module.app_dir() / "memory" / "timers.json")
     video_clip.on_finished = announce
     import watcher
     watcher.on_found = announce
+
+    def announce_call(message: str) -> None:
+        # A ringing phone needs one spoken line, not a conversation; while TRON is mid-conversation the
+        # notification alone is enough (it never talks over itself).
+        tray.notify(message)
+        if machine.state.name in ("IDLE", "ERROR") and machine.dictation is None:
+            import tts
+            tts.say(message)
+
+    def _config_flag(name: str, default: bool) -> bool:
+        try:
+            return bool(json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8")).get(name, default))
+        except Exception:
+            return default
+
+    if _config_flag("announce_calls", True):
+        import calls
+        calls.start(announce_call, lambda: _config_flag("announce_messages", False))
 
     if cfg.wake_mode == "hotkey":
         triggers = [HotkeyTrigger(cfg.hotkey, on_trigger=machine.hotkey)]
@@ -325,14 +358,15 @@ def main() -> None:
     else:
         model_path = str(config_module.resolve_path(cfg.wakeword_model_path))
         triggers = [
-            OpenWakeWordTrigger(model_path, on_trigger=machine.trigger,
-                                device=cfg.mic_device),
+            OpenWakeWordTrigger(model_path, on_trigger=machine.trigger, device=cfg.mic_device,
+                                extra_models=wake_trigger.persona_wake_models(),
+                                on_assistant=lambda a: config_module.update_config_file({"active_assistant": a})),
             # The hotkey stays live alongside the wake word. Wake-word recall
             # depends on the speaker's voice and the microphone, and a bad run
             # of detections would otherwise leave TRON with no way in at all.
             HotkeyTrigger(cfg.hotkey, on_trigger=machine.hotkey),
         ]
-        ready_message = (f'{config_module.APP_LABEL} is running. Say "hey tron" — or press '
+        ready_message = (f'{config_module.APP_LABEL} is running. Say "hey tron" (or "hey jarvis") — or press '
                          f"{cfg.hotkey} if it mishears you. Quit from the tray icon menu.")
 
     # The wake word that opened a conversation stays paused until it ends; dictation follows a

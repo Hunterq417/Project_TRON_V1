@@ -68,13 +68,16 @@ def resolve_input(device):
     devices and would otherwise be unusable. Names are worth supporting because
     indices are not stable: connecting a pair of earbuds renumbered this
     machine's device list mid-session."""
-    if device is None or isinstance(device, int):
+    if isinstance(device, int):
         return device
-    wanted = str(device).lower()
-    for index, name, _channels in input_devices():
-        if wanted in name.lower():
-            return index
-    raise ValueError(f'no input device matching "{device}" — run --list-mics to see them')
+    if device:
+        wanted = str(device).lower()
+        for index, name, _channels in input_devices():
+            if wanted in name.lower():
+                return index
+    # Unset, or the named mic isn't connected (a headset unplugged): use what Windows is using right now,
+    # never stop to ask. The person picked that default in Windows already.
+    return windows_default_input()
 
 
 def microphone_name(device=None) -> str:
@@ -132,15 +135,35 @@ def resolve_output(device):
     audio API, so "Realtek" matches several devices and sounddevice refuses an
     ambiguous name. Without it speaker_device could only be an index, and
     indices are not stable — plugging in a headset renumbers the list."""
-    if device is None:
-        return windows_default_output()
     if isinstance(device, int):
         return device
-    wanted = str(device).lower()
-    for index, name, _channels in output_devices():
-        if wanted in name.lower():
-            return index
-    raise ValueError(f'no output device matching "{device}" — run --list-mics to see them')
+    if device:
+        wanted = str(device).lower()
+        for index, name, _channels in output_devices():
+            if wanted in name.lower():
+                return index
+    return windows_default_output()   # unset or not connected: wherever Windows is playing now
+
+
+def windows_default_input():
+    """The microphone Windows is using right now (earbuds, headset, laptop mic...), or None for PortAudio's
+    default. Like the speaker: PortAudio fixes its default when it starts, so earbuds connected later were
+    never heard. Matched by name on MME (names cut to 31 characters, hence the prefix match)."""
+    try:
+        from pycaw.pycaw import AudioUtilities
+        current = AudioUtilities.GetMicrophone()
+        name = getattr(current, "FriendlyName", None)
+        if name is None:
+            from pycaw.utils import AudioUtilities as AU
+            name = AU.CreateDevice(current).FriendlyName
+        mme = next(i for i, api in enumerate(sd.query_hostapis()) if api["name"] == "MME")
+        for index, device in enumerate(sd.query_devices()):
+            if device["hostapi"] == mme and device["max_input_channels"] > 0 \
+                    and len(device["name"]) >= 8 and (name or "").startswith(device["name"]):
+                return index
+    except Exception:
+        pass
+    return None
 
 
 def windows_default_output():

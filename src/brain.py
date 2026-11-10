@@ -29,7 +29,7 @@ _NO = re.compile(r"\b(?:no|nope|don'?t|do\W+not|cancel|stop|wait|nahi|mat)\b", r
 # Tools that are hard to undo, cut TRON off mid-sentence, or reach outside the PC: the registry says which.
 # send_email is one: "Show me first" once sent a drafted message straight away.
 DESTRUCTIVE = tool_registry.confirmation_tools()
-FORGETTING = {"forget_fact", "forget_recent_activity", "forget_browser_knowledge", "forget_face",
+FORGETTING = {"forget_routine", "forget_fact", "forget_recent_activity", "forget_browser_knowledge", "forget_face",
               "forget_voice"}
 _FORGET_WORDS = re.compile(r"(forget|delete|remove|erase|clear|wipe|unlearn|bhool|mita)", re.I)
 YES_FRESH_FOR = 30.0   # seconds a "yes" counts for
@@ -67,6 +67,21 @@ HOUSE_RULES = (
     "- Speech recognition mishears names: 'cloud' is often Claude, 'drone' is TRON. Read names by how they "
     "sound and by what you know the user calls things. If a tool says it can't find something and lists the "
     "closest matches, use the one that clearly fits instead of giving up; ask only if two fit equally.\n"
+    "- Before acting, work out the GOAL behind the words, not just the words. Ask yourself why they'd say "
+    "it, then answer that. 'Observe my screen' / 'look at this' / 'what do you think' means: look at what "
+    "they're working on or watching (the main window's content) and respond to THAT (explain it, help with "
+    "it, spot the problem), never an inventory of open apps or the taskbar. 'Keep an eye on X' means keep "
+    "watching (watch_until). 'Is it done?' means check and say yes or no. If the goal is still unclear, "
+    "make the most useful reasonable guess and say it in one line, e.g. 'You're on the Cloudflare app, "
+    "it shows connected - want me to check something specific?'\n"
+    "- Language: reply in the language the user speaks. Hindi gets Hindi, Hinglish (Hindi and English "
+    "mixed) gets natural Hinglish, English gets English. Keep names, apps and commands as they are; tools "
+    "still take English arguments (play_music query 'Karan Aujla', not translated).\n"
+    "- Only answer what is said TO you. If the user is talking to someone else (a person in the room, a "
+    "phone call), or you hear a TV, video or other voices, call not_for_me and say nothing.\n"
+    "- Read the user's mood from their words and tone of voice. Frustrated or in a hurry: fix it first, "
+    "fewer words, no jokes. Stressed or sad: calm and kind. Happy or joking: match it lightly. Never "
+    "announce their mood unless they ask.\n"
     "- Never give up after one failed try: try the obvious alternative first, then say what you tried."
 )
 

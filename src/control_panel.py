@@ -30,7 +30,11 @@ FONT, ICONS, MONO = "Segoe UI", "Segoe Fluent Icons", "Cascadia Mono"
 # TRON palette: near-black grid, one cyan light. Status colours are separate from the accent.
 BG, RAIL, CARD, CARD_HI, LINE = "#070b10", "#0b1118", "#0f1821", "#142230", "#1b2a37"
 TEXT, MUTED, FAINT = "#e3eef3", "#8aa0ac", "#56697a"
-ACCENT, ACCENT_DIM, ACCENT_TEXT = "#2ee6ff", "#0e5966", "#04141a"
+ACCENT, ACCENT_DIM, ACCENT_TEXT, ACCENT_HOVER = "#2ee6ff", "#0e5966", "#04141a", "#7ff1ff"
+# One shared panel, one colour per assistant: TRON cyan, FRIDAY pink, JARVIS red.
+THEMES = {"tron": ("#2ee6ff", "#0e5966", "#04141a", "#7ff1ff"),
+          "friday": ("#ff4fa3", "#6b1f45", "#1a0410", "#ff8cc4"),
+          "jarvis": ("#ff3b3b", "#661616", "#1a0404", "#ff7a7a")}
 GOOD, WARN, BAD = "#3ddc84", "#f5b942", "#ff5c6c"
 SECONDARY, HINT = MUTED, FAINT   # names older code and tests use
 
@@ -144,6 +148,20 @@ class Bubble:
             c.create_rectangle(x, y, x + bar_w, y + bh, fill=color, outline="")
 
 
+def _use_theme(assistant_id: str) -> None:
+    """Widgets read these module colours when they're built, so a rebuild after this repaints everything."""
+    global ACCENT, ACCENT_DIM, ACCENT_TEXT, ACCENT_HOVER
+    ACCENT, ACCENT_DIM, ACCENT_TEXT, ACCENT_HOVER = THEMES.get(assistant_id, THEMES["tron"])
+    STATES["LISTENING"] = ("Listening", ACCENT)
+
+
+def _active_assistant() -> dict:
+    try:
+        return config.active_assistant(json.loads(config.CONFIG_PATH.read_text(encoding="utf-8")))
+    except Exception:
+        return config.DEFAULT_ASSISTANTS[0]
+
+
 class ControlPanel:
     """Build once on the GUI thread; show() / on_state_change() are safe from any thread via the queue."""
 
@@ -155,14 +173,24 @@ class ControlPanel:
         ctk.set_appearance_mode("dark")
         self.win = ctk.CTkToplevel(root, fg_color=BG)
         self.win.withdraw()
-        self.win.title(f"{config.APP_LABEL} — Control Panel")
         self.win.geometry(f"{W}x{H}")
         self.win.minsize(880, 580)
         self.win.protocol("WM_DELETE_WINDOW", self.win.withdraw)  # the tray brings it back
         self.win.bind("<Escape>", lambda _e: self.win.withdraw())
         self._dark_title_bar()
-        self._style_tables()
+        self.bubble = Bubble(root, self._levels, self.k)
+        self.current, self._state, self._phase = None, "IDLE", 0.0
+        self.assistant = _active_assistant()
+        self._build_all()
+        self._select_tab("keys" if self._needs_keys() else "home")
+        self.win.after(80, self._pump)
+        self.win.after(500, self._tick)
 
+    def _build_all(self):
+        """The whole window, in the active assistant's name and colour."""
+        _use_theme(self.assistant.get("id", "tron"))
+        self.win.title(f"{self.assistant.get('name', 'TRON')} v{config.APP_VERSION} — Control Panel")
+        self._style_tables()
         self.rail = ctk.CTkFrame(self.win, fg_color=RAIL, corner_radius=0, width=228)
         self.rail.pack(side="left", fill="y")
         self.rail.pack_propagate(False)
@@ -177,11 +205,19 @@ class ControlPanel:
                       "memory": self._build_memory(), "dict": self._build_dictionary(),
                       "hist": self._build_history(), "priv": self._build_privacy(),
                       "settings": self._build_settings(), "keys": self._build_keys(), "faces": self._build_faces()}
-        self.bubble = Bubble(root, self._levels, self.k)
-        self.current, self._state, self._phase = None, "IDLE", 0.0
-        self._select_tab("keys" if self._needs_keys() else "home")
-        self.win.after(80, self._pump)
-        self.win.after(500, self._tick)
+
+    def _follow_assistant(self):
+        """Switched to FRIDAY or JARVIS (by voice or Settings): repaint the panel as them."""
+        now = _active_assistant()
+        if now.get("id") == self.assistant.get("id"):
+            return
+        self.assistant = now
+        tab, self.current = self.current or "home", None
+        for child in self.win.winfo_children():
+            child.destroy()
+        self._build_all()
+        self._select_tab(tab)
+        self._apply_state(self._state)
 
     # ------------------------------------------------------------------ thread-safe entry points
     def show(self):
@@ -279,7 +315,7 @@ class ControlPanel:
         label = f"{icon}  {text}" if icon else text
         return ctk.CTkButton(parent, text=label, command=command, height=34, corner_radius=8,
                              font=_font(12, "bold" if primary else "normal"),
-                             fg_color=ACCENT if primary else CARD_HI, hover_color="#7ff1ff" if primary else LINE,
+                             fg_color=ACCENT if primary else CARD_HI, hover_color=ACCENT_HOVER if primary else LINE,
                              text_color=ACCENT_TEXT if primary else TEXT, border_width=0 if primary else 1,
                              border_color=LINE, **kw)
 
@@ -371,7 +407,7 @@ class ControlPanel:
         self.orb.pack(side="left")
         names = ctk.CTkFrame(brand, fg_color="transparent")
         names.pack(side="left", padx=(12, 0))
-        ctk.CTkLabel(names, text=config.APP_NAME, font=_font(22, "bold", "Segoe UI Black"), text_color=TEXT,
+        ctk.CTkLabel(names, text=self.assistant.get("name", config.APP_NAME), font=_font(22, "bold", "Segoe UI Black"), text_color=TEXT,
                      anchor="w").pack(fill="x")
         self._label(names, f"v{config.APP_VERSION}  ·  control panel", 10, color=FAINT).pack(fill="x")
 
@@ -466,6 +502,7 @@ class ControlPanel:
                 row.pack(fill="x", pady=3)
             else:
                 row.pack_forget()
+        self._follow_assistant()
         self.win.after(500, self._tick)
 
     # ------------------------------------------------------------------ home
@@ -1135,6 +1172,16 @@ class ControlPanel:
             return [], []
 
     @staticmethod
+    def _windows_input() -> str:
+        try:
+            from pycaw.pycaw import AudioUtilities
+            from pycaw.utils import AudioUtilities as AU
+            mic = AudioUtilities.GetMicrophone()
+            return getattr(mic, "FriendlyName", None) or AU.CreateDevice(mic).FriendlyName or "unknown"
+        except Exception:
+            return "unknown"
+
+    @staticmethod
     def _windows_output() -> str:
         try:
             from pycaw.pycaw import AudioUtilities
@@ -1160,7 +1207,8 @@ class ControlPanel:
             "brain": [("local", "Local (on this PC)"), ("gemini", "Gemini Live (online)")],
             "local_model": [(m, m) for m in self._ollama_models()],
             "local_voice": list(LOCAL_VOICES),
-            "mic_device": [("", "System default")] + [(n, n) for n in dict.fromkeys(mics)],
+            "mic_device": [("", f"Follow Windows (now: {self._windows_input()})")]
+                          + [(n, n) for n in dict.fromkeys(mics)],
             "speaker_device": [("", f"Follow Windows (now: {self._windows_output()})")]
                               + [(n, n) for n in dict.fromkeys(speakers)],
             "voice_name": [(v, v) for v in VOICES],

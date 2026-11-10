@@ -14,6 +14,8 @@ import system_control
 import system_status
 import computer
 import music
+import google_services
+import routine
 import skills
 import timers
 import video_clip
@@ -282,6 +284,19 @@ def _play_music(args, cfg):
     return music.play_music(args, cfg)
 
 
+def _switch_assistant(args, cfg):
+    """TRON, FRIDAY and JARVIS share everything but voice and manner, so switching is one config value;
+    the state machine reads it at the start of the next conversation."""
+    import config
+    wanted = str(args.get("name", "")).strip().lower()
+    data = config.update_config_file({})
+    for a in data.get("assistants") or config.DEFAULT_ASSISTANTS:
+        if wanted in (a["id"], a["name"].lower()):
+            config.update_config_file({"active_assistant": a["id"]})
+            return f"switched: say a one-line goodbye; {a['name']} takes over straight after, in their own voice"
+    return "there are only three assistants: TRON, FRIDAY and JARVIS"
+
+
 def _current_time(args, cfg):
     import datetime
     return datetime.datetime.now().strftime("it's %I:%M %p on %A, %B %d, sir").replace(" 0", " ")
@@ -333,6 +348,9 @@ TOOL_DISPATCH = {
     "play_music": _play_music,
     "current_time": _current_time,
     "use_skill": skills.use_skill,
+    "switch_assistant": _switch_assistant,
+    "my_routine": routine.my_routine,
+    "forget_routine": routine.forget_routine,
     "video_control": desktop_control.video_control,
     "enroll_face": faces.enroll_face,
     "enroll_voice": voices.enroll_voice,
@@ -945,16 +963,50 @@ TOOL_DECLARATIONS += [
     },
 ]
 
-TOOL_DECLARATIONS += computer.DECLARATIONS + [skills.DECLARATION]
+TOOL_DECLARATIONS += computer.DECLARATIONS + [skills.DECLARATION] + routine.DECLARATIONS + [{
+    "name": "not_for_me",
+    "description": "Call INSTEAD of answering when what you just heard wasn't said to you: the user talking to "
+                   "another person or on the phone, someone else in the room, a video or song playing, "
+                   "background chatter. Signs: another person's name used as the addressee, a reply to a "
+                   "voice you didn't hear, talk that doesn't fit your conversation. Ends the conversation "
+                   "silently; they can wake you again. When unsure and it doesn't sound like a request, call it.",
+    "parameters": {"type": "object", "properties": {}},
+}, {
+    "name": "switch_assistant",
+    "description": "Hand over to another of the user's assistants: 'switch to Friday', 'Jarvis, take over', "
+                   "'Tron, take over'. Same memory and tools; a different voice and manner from the next "
+                   "conversation. For a one-off opinion ('what would Jarvis say?') don't switch: answer that "
+                   "once in their style.",
+    "parameters": {"type": "object", "properties": {
+        "name": {"type": "string", "enum": ["tron", "friday", "jarvis"]}}, "required": ["name"]},
+}]
 
 # Handled by the state machine itself, like the vision tools: they change what TRON does next rather
 # than returning a value.
-CONTROL_TOOL_NAMES = {"start_dictation"}
+def _google_declaration(fn) -> dict:
+    """A tool schema from the function's own signature and docstring, so google_services stays one source."""
+    import inspect
+    params = inspect.signature(fn).parameters
+    kind = lambda d: "boolean" if isinstance(d, bool) else "integer" if isinstance(d, int) else "string"
+    required = [n for n, p in params.items() if p.default is inspect.Parameter.empty]
+    return {"name": fn.__name__, "description": inspect.getdoc(fn),
+            "parameters": {"type": "object", "properties": {n: {"type": kind(p.default)} for n, p in params.items()},
+                           **({"required": required} if required else {})}}
+
+
+for _fn in google_services.FUNCTIONS:
+    TOOL_DECLARATIONS.append(_google_declaration(_fn))
+    TOOL_DISPATCH[_fn.__name__] = (lambda fn: lambda args, cfg: fn(**{k: v for k, v in (args or {}).items()
+                                                                     if k in fn.__code__.co_varnames}))(_fn)
+
+CONTROL_TOOL_NAMES = {"start_dictation", "not_for_me"}
 
 _LOOK_AT_SCREEN_DECLARATION = {
     "name": "look_at_screen",
     "description": (
-        "Capture and look at what's currently on the user's screen, then describe it. "
+        "Capture and look at what's currently on the user's screen. Respond to what they're focused on "
+        "(the content of the main window: the page, code, game, error, video) in light of what they asked, "
+        "not a list of open apps or taskbar icons. "
         'Say something like "let me take a look, sir" before calling this.'
     ),
     "parameters": {"type": "object", "properties": {}},

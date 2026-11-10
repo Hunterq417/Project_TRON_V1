@@ -37,6 +37,15 @@ class HotkeyTrigger:
             self._handle = None
 
 
+def persona_wake_models() -> dict:
+    """{model path: assistant id} for the assistants' own wake words. "hey jarvis" ships with openWakeWord;
+    nobody publishes "hey friday", so it's used once models/hey_friday.onnx has been trained
+    (docs/train_wakeword.md). Missing files are skipped."""
+    import config
+    jarvis = Path(openwakeword.__file__).parent / "resources" / "models" / "hey_jarvis_v0.1.onnx"
+    return {str(jarvis): "jarvis", str(config.app_dir() / "models" / "hey_friday.onnx"): "friday"}
+
+
 class OpenWakeWordTrigger:
     """Continuously listens on its own mic stream for a trained "hey tron" wake-word
     model (see docs/train_wakeword.md) and calls on_trigger() past a confidence
@@ -50,15 +59,22 @@ class OpenWakeWordTrigger:
 
     def __init__(self, model_path: str, on_trigger: Callable[[], None],
                  threshold: float = 0.5, device=None,
-                 on_score: Optional[Callable[[float, float], None]] = None):
+                 on_score: Optional[Callable[[float, float], None]] = None,
+                 extra_models: Optional[dict] = None, on_assistant: Optional[Callable[[str], None]] = None):
+        """extra_models: {model path: assistant id}, e.g. "hey jarvis" -> "jarvis". Hearing one of those
+        calls on_assistant(id) before on_trigger(), so the conversation starts as that assistant. "hey tron"
+        just wakes whoever is active."""
         if not Path(model_path).exists():
             raise FileNotFoundError(
                 f"No wake-word model at {model_path}. Train one first — see "
                 'docs/train_wakeword.md — or set "wake_mode": "hotkey" in config.json '
                 "to use the hotkey trigger instead."
             )
-        self._model = openwakeword.Model(wakeword_models=[model_path], inference_framework="onnx")
+        extra_models = {p: a for p, a in (extra_models or {}).items() if Path(p).exists()}
+        self._model = openwakeword.Model(wakeword_models=[model_path, *extra_models], inference_framework="onnx")
         self._model_key = Path(model_path).stem
+        self._assistant_for = {Path(p).stem: a for p, a in extra_models.items()}
+        self._on_assistant = on_assistant or (lambda assistant: None)
         self._on_trigger = on_trigger
         self._threshold = threshold
         self._device = device
@@ -69,12 +85,31 @@ class OpenWakeWordTrigger:
         self._stream: Optional[sd.InputStream] = None
 
     def start(self) -> None:
+        self._open()
+        threading.Thread(target=self._follow_windows, daemon=True).start()
+
+    def _open(self) -> None:
+        self._mic = audio_io.resolve_input(self._device)
         self._stream = sd.InputStream(
             samplerate=_WAKE_SAMPLE_RATE, channels=1, dtype="int16",
-            blocksize=_WAKE_BLOCK_SIZE, callback=self._on_block,
-            device=audio_io.resolve_input(self._device),
+            blocksize=_WAKE_BLOCK_SIZE, callback=self._on_block, device=self._mic,
         )
         self._stream.start()
+
+    def _follow_windows(self) -> None:
+        """Earbuds connected (or a headset unplugged) after TRON started: Windows switches its default mic,
+        and "hey tron" has to be heard on the new one. Checks every few seconds; reopens only on a change."""
+        import time
+        while self._stream is not None:
+            time.sleep(3)
+            try:
+                mic = audio_io.resolve_input(self._device)
+                if mic != self._mic and self._stream is not None:
+                    self._stream.stop()
+                    self._stream.close()
+                    self._open()
+            except Exception:
+                pass     # a device mid-switch: try again on the next check
 
     def stop(self) -> None:
         if self._stream is not None:
@@ -93,15 +128,21 @@ class OpenWakeWordTrigger:
             return
         chunk = np.frombuffer(bytes(indata), dtype=np.int16)
         predictions = self._model.predict(chunk)
-        score = predictions.get(self._model_key, 0.0)
+        key = max([self._model_key, *self._assistant_for], key=lambda k: predictions.get(k, 0.0))
+        score = predictions.get(key, 0.0)
         if self._on_score is not None:
             self._on_score(float(np.abs(chunk).mean()), float(score))
         if score > self._threshold:
             self._listening = False  # don't spawn another trigger while this one starts/runs
-            threading.Thread(target=self._fire, daemon=True).start()
+            threading.Thread(target=lambda: self._fire(key), daemon=True).start()
 
-    def _fire(self) -> None:
+    def _fire(self, key: str = "") -> None:
         try:
+            if key in self._assistant_for:
+                try:
+                    self._on_assistant(self._assistant_for[key])
+                except Exception:
+                    pass   # couldn't switch: still answer, as whoever is active
             self._on_trigger()
         finally:
             # The model still holds the audio that fired it; without a reset

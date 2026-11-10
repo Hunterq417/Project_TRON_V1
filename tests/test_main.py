@@ -31,9 +31,9 @@ def test_report_microphone_does_not_warn_about_a_quiet_microphone(monkeypatch):
     )
 
 
-def test_report_microphone_warns_when_the_device_cannot_be_found(monkeypatch):
-    """A mic_device pointing at a device that is not there can never work, which
-    unlike a quiet mic is worth interrupting for."""
+def test_report_microphone_never_interrupts_the_user(monkeypatch):
+    """TRON follows Windows' default mic, so a device it can't name is nothing for the user to fix: no
+    dialog (the HyperX error box came back every start)."""
     def boom(device):
         raise ValueError("no such device")
 
@@ -43,8 +43,7 @@ def test_report_microphone_warns_when_the_device_cannot_be_found(monkeypatch):
 
     main._report_microphone(SimpleNamespace(mic_device="nope"))  # must not raise
 
-    assert len(boxes) == 1
-    assert "--list-mics" in boxes[0]
+    assert boxes == []
 
 
 def test_wake_word_mode_keeps_the_hotkey_live_as_well(monkeypatch):
@@ -72,6 +71,7 @@ def test_wake_word_mode_keeps_the_hotkey_live_as_well(monkeypatch):
         gemini_api_key="k", model_name="m", voice_name="v", silence_timeout_s=45.0))
     monkeypatch.setattr(m.config_module, "resolve_path",
                         lambda p: SimpleNamespace(read_text=lambda encoding=None: "persona"))
+    monkeypatch.setattr(m, "_only_instance", lambda: True)   # a real TRON may be running
     monkeypatch.setattr(m, "OpenWakeWordTrigger",
                         lambda *a, **kw: SimpleNamespace(start=lambda: started.append("wake"),
                                                         stop=lambda: None))

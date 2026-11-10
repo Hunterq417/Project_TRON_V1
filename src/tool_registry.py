@@ -63,9 +63,18 @@ TOOLS = {m.name: m for m in (
     # email: a draft stays on the PC; sending is the external effect
     _t("draft_email", "email", "CREATE", side_effect=False),
     _t("send_email", "email", "SEND", "high", external=True, reversible=False, confirm=True),
+    # Google (FRIDAY): reading is free, sending mail and inviting people need a spoken yes
+    _t("connect_google", "google", "UPDATE"), _read("gmail_search", "google", "SEARCH"),
+    _read("gmail_read", "google"), _t("gmail_draft", "google", "CREATE", side_effect=False),
+    _t("gmail_send", "google", "SEND", "high", external=True, reversible=False, confirm=True),
+    _read("calendar_events", "google"),
+    _t("calendar_create", "google", "CREATE", "medium", external=True, confirm=True),
     # memory
     _t("remember_fact", "memory", "UPDATE"), _t("forget_fact", "memory", "DELETE", "medium"),
     _read("recall_activity", "memory"), _t("forget_recent_activity", "memory", "DELETE", "medium"),
+    # routine learning and the three assistants
+    _read("my_routine", "memory"), _t("forget_routine", "memory", "DELETE", "medium"),
+    _t("switch_assistant", "assistant", "UPDATE"), _read("not_for_me", "assistant"),
     # timers
     _t("set_timer", "timers", "CREATE"), _read("check_timers", "timers"), _t("cancel_timer", "timers", "DELETE"),
     # dictation

@@ -35,7 +35,8 @@ hiddenimports += ['psutil']
 # Offline mode: speech recognised on this PC (Parakeet via onnx-asr; the model lives next to the exe in
 # models\parakeet-tdt-0.6b-v2). LiveKit: WebRTC echo cancellation, a native library.
 # Local mode's voice: Kokoro (model in models\kokoro next to the exe) and espeak-ng for pronunciation.
-for _pkg in ('onnx_asr', 'livekit', 'kokoro_onnx', 'espeakng_loader', 'phonemizer', 'customtkinter', 'playwright', 'sherpa_onnx'):
+for _pkg in ('onnx_asr', 'livekit', 'kokoro_onnx', 'espeakng_loader', 'phonemizer', 'customtkinter', 'playwright', 'sherpa_onnx',
+             'googleapiclient', 'google_auth_oauthlib'):
     tmp_ret = collect_all(_pkg)
     datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('imageio_ffmpeg')
@@ -67,6 +68,7 @@ exe = EXE(
     a.datas,
     [],
     name='TRON',
+    icon='src/assets/tron.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -37,7 +37,8 @@ def test_every_tool_has_registry_metadata():
 
 
 def test_confirmation_policy_comes_from_the_registry():
-    assert brain.DESTRUCTIVE == {"shutdown_pc", "restart_pc", "sleep_pc", "send_email"}
+    assert brain.DESTRUCTIVE == {"shutdown_pc", "restart_pc", "sleep_pc", "send_email",
+                                 "gmail_send", "calendar_create"}
     made = decision.from_calls("email the client", [("draft_email", {}), ("send_email", {"to": "x"})], tool_registry)
     assert made.requires_confirmation and made.risk.level is decision.RiskLevel.HIGH
     assert made.risk.external_side_effect and made.response_mode == "confirmation_required"

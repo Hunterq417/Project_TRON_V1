@@ -178,10 +178,35 @@ def test_openwakeword_trigger_defaults_to_the_system_device(tmp_path, monkeypatc
     monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock())
     fake_sd = MagicMock()
     monkeypatch.setattr(wake_trigger, "sd", fake_sd)
+    monkeypatch.setattr(wake_trigger.audio_io, "windows_default_input", lambda: 6)
 
-    wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock()).start()
+    trigger = wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock())
+    trigger.start()
 
-    assert fake_sd.InputStream.call_args.kwargs["device"] is None
+    assert fake_sd.InputStream.call_args.kwargs["device"] == 6     # Windows' current mic
+    trigger.stop()
+
+
+def test_the_wake_word_moves_to_a_new_default_mic(tmp_path, monkeypatch):
+    """Earbuds connected after TRON started: "hey tron" must be heard on them."""
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock())
+    fake_sd = MagicMock()
+    monkeypatch.setattr(wake_trigger, "sd", fake_sd)
+    mics = iter([6, 9, 9, 9, 9])
+    monkeypatch.setattr(wake_trigger.audio_io, "resolve_input", lambda d: next(mics, 9))
+    import time
+    monkeypatch.setattr(time, "sleep", lambda s: None if s == 3 else None)
+    trigger = wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock())
+    trigger._open()
+    assert trigger._mic == 6
+    trigger._stream = fake_sd.InputStream.return_value
+    calls = []
+    original = trigger._open
+    trigger._open = lambda: (calls.append(1), original(), setattr(trigger, "_stream", None))
+    trigger._follow_windows()
+    assert calls and trigger._mic == 9
 
 
 def test_on_score_receives_level_and_score_for_every_block(tmp_path, monkeypatch):
@@ -214,3 +239,20 @@ def test_on_score_is_optional(tmp_path, monkeypatch):
     trigger = wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock())
     block = np.array([1, 2], dtype=np.int16)
     trigger._on_block(block.tobytes(), 2, None, None)  # must not raise
+
+
+def test_hey_jarvis_wakes_tron_as_jarvis(tmp_path, monkeypatch):
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    jarvis = tmp_path / "hey_jarvis_v0.1.onnx"
+    jarvis.write_bytes(b"fake")
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock())
+    order = []
+    trigger = wake_trigger.OpenWakeWordTrigger(
+        str(model_path), on_trigger=lambda: order.append("wake"),
+        extra_models={str(jarvis): "jarvis", str(tmp_path / "hey_friday.onnx"): "friday"},   # friday not trained
+        on_assistant=order.append)
+    assert trigger._assistant_for == {"hey_jarvis_v0.1": "jarvis"}
+    trigger._fire("hey_jarvis_v0.1")
+    trigger._fire("tron")                     # "hey tron" wakes whoever is active, no switch
+    assert order == ["jarvis", "wake", "wake"]

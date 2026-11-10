@@ -1,6 +1,7 @@
 # state_manager.py
 import asyncio
 import datetime
+import json
 import threading
 import time
 import traceback
@@ -15,6 +16,7 @@ import voices
 import memory
 import local_brain
 import offline
+import routine
 import skills
 import perception
 import tools
@@ -206,7 +208,11 @@ class TronStateMachine:
         if not self._busy.acquire(blocking=False):
             return
         try:
-            if self.state in _RETRIGGERABLE:
+            # Twice at most: "switch to Jarvis" ends this conversation and JARVIS opens the next one himself.
+            for _ in range(2):
+                if self.state not in _RETRIGGERABLE:
+                    break
+                who = self._load_assistant()
                 faces.refresh(self._cfg)   # who's at the PC, looked up while TRON starts listening
                 if self._local_mode():
                     self._run_local()
@@ -220,8 +226,38 @@ class TronStateMachine:
                 if self._dictate_after:
                     self._dictate_after = False
                     self._run_dictation()
+                    break
+                if who is None or self._active_id() == who:
+                    break
+                self._pending_note = ("You have just taken over from another assistant because the user asked "
+                                      "for you. Speak first: introduce yourself in one short sentence, in your "
+                                      "own manner, and ask what they need.")
         finally:
             self._busy.release()
+
+    @staticmethod
+    def _active_id():
+        try:
+            return config.active_assistant(json.loads(config.CONFIG_PATH.read_text(encoding="utf-8")))["id"]
+        except Exception:
+            return None
+
+    def _load_assistant(self):
+        """Picks up a switch to FRIDAY or JARVIS (by voice or the panel) at the start of the next
+        conversation, without a restart. Only the voice and persona change: memory and tools are shared."""
+        if not isinstance(self._cfg, config.Config):
+            return None
+        try:
+            fresh = config.load_config()
+            self._persona_text = config.resolve_path(fresh.persona_path).read_text(encoding="utf-8")
+        except Exception:
+            return None   # a half-written config.json: keep the current assistant rather than fail to start
+        self._voice_name = fresh.voice_name
+        self._cfg.voice_name, self._cfg.persona_path = fresh.voice_name, fresh.persona_path
+        self._cfg.local_voice = fresh.local_voice
+        import tts
+        tts.VOICE = fresh.local_voice   # offline fallback and announcements speak as the new assistant too
+        return self._active_id()
 
     def _online(self) -> bool:
         return offline.online()
@@ -335,12 +371,19 @@ class TronStateMachine:
                 self._end_requested_at = time.monotonic()
                 return ("dictation starts after the chime once you finish this sentence. Tell the user to "
                         "start talking after the chime, and to say 'hey tron' or press the hotkey to stop")
+            if name == "not_for_me":
+                self._stop_now = True    # they're talking to someone else: go quiet, back to the wake word
+                return "ok, silent"
             if name in tools.VISION_TOOL_NAMES:
                 return await self._handle_vision_tool(name, session)
             handler = tools.TOOL_DISPATCH.get(name)
             if handler is None:
                 return f"there is no tool called {name}, sir"
-            return await asyncio.to_thread(handler, call["args"], self._cfg)
+            routine.observe(name, call["args"], self._cfg)
+            result = await asyncio.to_thread(handler, call["args"], self._cfg)
+            if name == "switch_assistant":
+                self._end_requested_at = time.monotonic()   # hand over now, in the new voice
+            return result
         except Exception as exc:
             _log_conversation_error()
             return f"that failed, sir: {type(exc).__name__}: {exc}"
