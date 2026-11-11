@@ -9,7 +9,7 @@ def test_every_declaration_has_a_matching_dispatch_entry():
     declared_names = {d["name"] for d in tools.TOOL_DECLARATIONS}
     dispatched_names = set(tools.TOOL_DISPATCH.keys())
     # control tools (start_dictation) are handled by the state machine, not the dispatch table
-    assert declared_names == dispatched_names | tools.CONTROL_TOOL_NAMES
+    assert declared_names | (tools.PERMISSION_GATED - tools.VISION_TOOL_NAMES) == dispatched_names | tools.CONTROL_TOOL_NAMES
 
 
 def test_open_target_uses_direct_launch_as_a_last_resort(monkeypatch):

@@ -259,6 +259,8 @@ def refresh(cfg=None) -> None:
     delay an answer). Only when the camera is allowed and someone is enrolled. Never raises."""
     if cfg is None or not _camera_allowed(cfg) or not _gallery_path().exists():
         return
+    if time.time() - _seen["at"] < 60:
+        return   # the presence watcher looked moments ago; don't open the camera again
 
     def look():
         try:
@@ -277,3 +279,104 @@ def context(max_age: float = 300.0) -> str:
         return (f"The person at the PC right now is {_seen['name']} (recognised by face through the camera). "
                 "Address them by name and use what you know about them.")
     return ""
+
+
+# --------------------------------------------------------------------------- presence: greeting people by name
+AWAY = 30 * 60          # someone back after this long gets greeted again
+EVERY = 30              # seconds between looks (the camera light blinks briefly each time)
+ADAPT = (MATCH + 0.12, 0.85)   # confident but not identical: a new angle or light worth keeping
+MAX_LEARNED = 20        # fingerprints kept per person once TRON has been learning on its own
+
+
+def _seen_path():
+    return config.app_dir() / "memory" / "faces_seen.json"
+
+
+def last_seen() -> dict:
+    """{name: unix time} of when TRON last saw each person."""
+    try:
+        return json.loads(_seen_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def user_is_busy() -> bool:
+    """A fullscreen game, a presentation or Do Not Disturb (Windows' own answer): don't start talking."""
+    import ctypes
+    state = ctypes.c_int(0)
+    try:
+        ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state))
+    except Exception:
+        return False
+    return state.value not in (0, 5, 7)    # 5 accepts notifications, 7 an app is in front (fine)
+
+
+def observe(frame: np.ndarray, now: float, memory: dict, people: dict = None) -> list:
+    """One look. Updates _seen and last-seen times, learns a known face in new light, and returns who just
+    ARRIVED: [(name, seconds since last seen or None)] for people back after AWAY, or [(None, None)] for a
+    stranger seen alone on two looks in a row. memory carries state between looks ({"stranger": count})."""
+    people = gallery() if people is None else people
+    seen = last_seen()
+    arrivals, known, strangers, learned = [], [], 0, False
+    for _box, _score, marks in detect(frame):
+        vector = embed(frame, marks)
+        name, sim = identify(vector, people)
+        if not name:
+            strangers += 1
+            continue
+        known.append(name)
+        if ADAPT[0] <= sim <= ADAPT[1] and len(people[name]) < MAX_LEARNED:
+            people[name] = np.vstack([people[name], vector[None, :]]).astype(np.float32)
+            learned = True
+        before = seen.get(name)
+        if before is None or now - before > AWAY:
+            arrivals.append((name, None if before is None else now - before))
+        seen[name] = now
+    if learned:
+        _save(people)
+    memory["stranger"] = memory.get("stranger", 0) + 1 if strangers == 1 and not known else 0
+    if memory["stranger"] == 2 and now - memory.get("stranger_greeted", now - AWAY - 1) > AWAY:
+        memory["stranger_greeted"] = now
+        arrivals.append((None, None))
+    _seen["name"], _seen["at"] = (known[0] if known else None), now
+    _seen_path().parent.mkdir(parents=True, exist_ok=True)
+    _seen_path().write_text(json.dumps(seen), encoding="utf-8")
+    return arrivals
+
+
+def watch(on_arrival, cfg_now, can_talk) -> None:
+    """Every EVERY seconds, while the camera is allowed, someone is enrolled, TRON is idle and the user isn't
+    in a fullscreen game: one camera frame, then on_arrival(name, away_seconds) for each arrival."""
+    def loop():
+        memory = {}
+        while True:
+            time.sleep(EVERY)
+            try:
+                cfg = cfg_now()
+                if not (_camera_allowed(cfg) and getattr(cfg, "greet_by_face", True) and _gallery_path().exists()
+                        and can_talk() and not user_is_busy()):
+                    continue
+                for name, away in observe(camera_frames(1)[0], time.time(), memory):
+                    on_arrival(name, away)
+            except Exception:
+                pass   # a busy or unplugged camera: try again next time
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def greeting_note(name, away) -> str:
+    """The one-off instruction for a conversation TRON opens itself when someone arrives."""
+    if name is None:
+        return ("Someone you don't recognise has sat down at the PC. Speak first: greet them politely, say you "
+                "don't think you've met, and ask their name. If they tell you and agree to be remembered, call "
+                "enroll_face with that name. Don't share anything personal about the user with them.")
+    if away is None:
+        when = "This is the first time you've seen them through the camera."
+    elif away < 6 * 3600:
+        when = f"They were last here about {round(away / 3600, 1) if away >= 3600 else round(away / 60)} " \
+               f"{'hours' if away >= 3600 else 'minutes'} ago."
+    else:
+        when = f"You last saw them {round(away / 86400) or 1} day(s) ago." if away >= 86400 else \
+               "You last saw them earlier today."
+    return (f"{name} has just come to the PC (recognised by face through the camera). {when} Speak first: greet "
+            f"them by name in one short, natural sentence that fits the time of day and how long they were away, "
+            "then wait. Use what you remember about them, but don't list it.")

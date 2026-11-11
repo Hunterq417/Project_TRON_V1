@@ -85,7 +85,7 @@ TOOLS = {m.name: m for m in (
     # seeing and driving the screen (Guard asks before risky clicks such as Delete or Send)
     _read("screen_elements", "screen_control"), _t("click_element", "screen_control", "UPDATE", "medium"),
     _t("type_text", "screen_control", "UPDATE", "medium"), _t("press_keys", "screen_control", "UPDATE", "medium"),
-    _t("scroll", "screen_control", "UPDATE"), _read("look_at_screen", "vision"), _read("look_via_camera", "vision"),
+    _t("scroll", "screen_control", "UPDATE"), _read("look_at_screen", "vision"), _read("look_via_camera", "vision"), _read("identify_object", "vision"),
     # video
     _t("clip_video", "video", "CREATE", timeout=600),
     # security

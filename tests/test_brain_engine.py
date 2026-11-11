@@ -32,7 +32,7 @@ def engine(*replies, **cfg):
 
 # --------------------------------------------------------------------------- registry and policy
 def test_every_tool_has_registry_metadata():
-    names = {d["name"] for d in tools.TOOL_DECLARATIONS} | {"look_at_screen", "look_via_camera"}
+    names = {d["name"] for d in tools.TOOL_DECLARATIONS} | tools.PERMISSION_GATED
     assert names == set(tool_registry.TOOLS)
 
 

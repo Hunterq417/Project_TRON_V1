@@ -366,6 +366,21 @@ def main() -> None:
     import scheduler
     scheduler.start(run_scheduled)
 
+    import faces
+    from types import SimpleNamespace
+
+    def face_settings():
+        try:
+            raw = json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            raw = {}
+        return SimpleNamespace(camera_enabled=bool(raw.get("camera_enabled")),
+                               greet_by_face=raw.get("greet_by_face", True) is not False)
+
+    idle = lambda: machine.state.name in ("IDLE", "ERROR") and machine.dictation is None
+    # Someone sits down: TRON greets them by name (or asks a stranger's). Quiet during fullscreen games.
+    faces.watch(lambda name, away: idle() and machine.greet(faces.greeting_note(name, away)), face_settings, idle)
+
     try:
         mcp_servers = json.loads(config_module.CONFIG_PATH.read_text(encoding="utf-8")).get("mcp_servers")
     except Exception:

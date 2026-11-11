@@ -33,7 +33,7 @@ LOCAL_VOICES = [("david", "Microsoft David"), ("zira", "Microsoft Zira"), ("haze
 UI_MODELS = [("dust-orb", "Dust Orb"), ("aurora-orb", "Aurora Orb"), ("halo-ring", "Halo Ring")]
 KEYS = ("gemini_api_key", "openrouter_api_key", "smtp_app_password")
 PLAIN = ("smtp_host", "smtp_user", "hotspot_ssid", "hotkey")
-SWITCHES = ("local_brain_enabled", "memory_enabled", "brain_debug", "camera_enabled", "screen_enabled",
+SWITCHES = ("local_brain_enabled", "memory_enabled", "brain_debug", "camera_enabled", "screen_enabled", "greet_by_face",
             "announce_calls", "announce_messages")
 _FAIL = re.compile(r"\b(fail|couldn't|could not|can't|cannot|isn't|not found|no tool|error|refused)", re.I)
 
@@ -245,7 +245,7 @@ class Api:
                       wake_mode=data.get("wake_mode", "hotkey"), local_voice=data.get("local_voice", "david"),
                       voice_name=data.get("voice_name", "Orus"), mic_device=data.get("mic_device") or "",
                       speaker_device=data.get("speaker_device") or "", local_model=data.get("local_model", "qwen3.5:4b"))
-        defaults = {"local_brain_enabled": True, "memory_enabled": True, "announce_calls": True}
+        defaults = {"local_brain_enabled": True, "memory_enabled": True, "announce_calls": True, "greet_by_face": True}
         values.update({k: data.get(k, defaults.get(k, False)) is not False and bool(data.get(k, defaults.get(k, False)))
                        for k in SWITCHES})
         values.update({k: data.get(k, "") for k in PLAIN})
@@ -280,7 +280,7 @@ class Api:
             import local_brain
             threading.Thread(target=local_brain.unload, args=(old.get("local_model") or local_brain.DEFAULT_MODEL,),
                              daemon=True).start()
-        live = {"announce_messages", "camera_enabled", "screen_enabled", "local_brain_enabled", "memory_enabled",
+        live = {"announce_messages", "camera_enabled", "greet_by_face", "screen_enabled", "local_brain_enabled", "memory_enabled",
                 "brain_debug"}
         if not changed:
             return _ok("Nothing changed")

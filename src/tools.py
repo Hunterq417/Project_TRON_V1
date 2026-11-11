@@ -15,6 +15,7 @@ import system_status
 import computer
 import music
 import google_services
+import objects
 import routine
 import scheduler
 import skills
@@ -350,6 +351,7 @@ TOOL_DISPATCH = {
     "current_time": _current_time,
     "use_skill": skills.use_skill,
     "switch_assistant": _switch_assistant,
+    "identify_object": objects.identify_object,
     "schedule_task": scheduler.schedule_task,
     "list_schedules": scheduler.list_schedules,
     "cancel_schedule": scheduler.cancel_schedule,
@@ -1026,6 +1028,8 @@ _LOOK_VIA_CAMERA_DECLARATION = {
 }
 
 VISION_TOOL_NAMES = {"look_at_screen", "look_via_camera"}
+# Declared only when the camera or screen is allowed (declarations_for), like the vision tools.
+PERMISSION_GATED = VISION_TOOL_NAMES | {"identify_object"}
 
 
 def declarations_for(cfg) -> list:
@@ -1038,4 +1042,6 @@ def declarations_for(cfg) -> list:
         declarations.append(_LOOK_AT_SCREEN_DECLARATION)
     if cfg is not None and getattr(cfg, "camera_enabled", False):
         declarations.append(_LOOK_VIA_CAMERA_DECLARATION)
+    if cfg is not None and (getattr(cfg, "camera_enabled", False) or getattr(cfg, "screen_enabled", False)):
+        declarations.append(objects.DECLARATION)
     return declarations
