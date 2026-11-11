@@ -18,6 +18,10 @@ import config
 MATCH = 0.60             # cosine similarity for "same speaker"; your own 3 s clips scored 0.82-0.94
 SAMPLE_RATE = 16000
 SECONDS_TO_IDENTIFY = 3.0
+KEEP_SECONDS = 8.0       # speech kept per conversation, for checking who gave each command
+RECENT_SECONDS = 4.0     # the slice a command is checked on
+OWNER_MIN_SECONDS = 1.0  # less voice than this can't be told apart reliably
+FREE_TOOLS = {"not_for_me"}   # going quiet is always allowed
 SAMPLES = 4
 _lock = threading.Lock()
 _extractor = []
@@ -100,7 +104,7 @@ class Collector:
         self._parts, self._seconds, self._done = [], 0.0, False
 
     def add_pcm16(self, chunk: bytes) -> None:
-        if self._done or not chunk:
+        if not chunk:
             return
         try:   # a half sample at the end of a chunk must not end the conversation
             self.add(np.frombuffer(chunk[:len(chunk) // 2 * 2], dtype=np.int16).astype(np.float32) / 32768.0)
@@ -108,16 +112,24 @@ class Collector:
             self._done = True
 
     def add(self, audio: np.ndarray) -> None:
-        if self._done or not _path().exists():
+        if not _path().exists():
             return
         speech = speech_only(audio)
         if len(speech):
             self._parts.append(speech)
             self._seconds += len(speech) / SAMPLE_RATE
-        if self._seconds >= SECONDS_TO_IDENTIFY:
+            while len(self._parts) > 1 and self._seconds - len(self._parts[0]) / SAMPLE_RATE >= KEEP_SECONDS:
+                self._seconds -= len(self._parts.pop(0)) / SAMPLE_RATE   # keep only the latest speech
+        if not self._done and self._seconds >= SECONDS_TO_IDENTIFY:
             self._done = True
             audio_all = np.concatenate(self._parts)
             threading.Thread(target=_identify_now, args=(audio_all,), daemon=True).start()
+
+    def recent(self, seconds: float = RECENT_SECONDS) -> np.ndarray:
+        """The latest `seconds` of the speaker's voice: what the last command was said in."""
+        if not self._parts:
+            return np.zeros(0, np.float32)
+        return np.concatenate(self._parts)[-int(seconds * SAMPLE_RATE):]
 
 
 def _identify_now(audio: np.ndarray) -> None:
@@ -219,3 +231,41 @@ def forget_voice(args, cfg=None) -> str:
 def known_voices(args=None, cfg=None) -> str:
     people = gallery()
     return ("I know the voices of " + ", ".join(people) + ", sir") if people else "I don't know anyone's voice yet, sir"
+
+
+# --------------------------------------------------------------------------- only obey the owner
+def owner() -> str:
+    """Whose voice TRON obeys when only_obey_owner is on: config "owner", else the user's remembered name."""
+    try:
+        data = json.loads(config.CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not data.get("only_obey_owner"):
+        return ""
+    if data.get("owner"):
+        return str(data["owner"])
+    import memory
+    return next((str(f["value"]) for f in memory.all_facts() if f.get("key") == "name"), "")
+
+
+def owner_refusal(collector, tool: str, self_started: bool = False) -> str:
+    """"" when the action may run; otherwise why not, phrased for the model to pass on politely.
+    Only when only_obey_owner is on and the owner's voice is enrolled: without an enrolled voice there is
+    nothing to check against, and locking everyone out (the owner included) would be worse."""
+    name = owner()
+    people = gallery()
+    match = next((n for n in people if n.lower() == name.lower()), None) if name else None
+    if match is None or tool in FREE_TOOLS:
+        return ""
+    audio = collector.recent() if collector is not None else np.zeros(0, np.float32)
+    if self_started and not len(audio):
+        return ""   # TRON opened this conversation itself (a greeting, a scheduled task) and nobody spoke yet
+    if len(audio) < SAMPLE_RATE * OWNER_MIN_SECONDS:
+        return (f"REFUSED: I couldn't hear enough of the voice to be sure it's {match}. Ask them to say it again, "
+                "a little longer. Do nothing else.")
+    heard_name, _sim = identify(embed(audio), people)
+    if heard_name == match:
+        return ""
+    who = f"it sounds like {heard_name}" if heard_name else "it isn't a voice I know"
+    return (f"REFUSED: that voice isn't {match}'s ({who}). Only {match} can give me commands: say so politely "
+            "in one sentence and do nothing.")

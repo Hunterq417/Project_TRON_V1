@@ -393,6 +393,7 @@ class LocalSession:
         self._hear = hear or (lambda: self._listen(offline))
         import voices
         self._speaker = voices.Collector()
+        self._self_started = False   # set by run(greet=True): TRON opened this conversation
         self._speak = speak
 
     def _listen(self, offline):
@@ -438,6 +439,10 @@ class LocalSession:
 
     def run_tool(self, name, args):
         import perception
+        import voices
+        refused = voices.owner_refusal(self._speaker, name, self._self_started)
+        if refused:
+            return refused
         if name == "not_for_me":
             self.handed_over = True    # ends the conversation quietly; nothing is said
             return "ok, silent"
@@ -466,6 +471,7 @@ class LocalSession:
 
     def run(self, max_turns: int = 12, greet: bool = False) -> None:
         import winsound
+        self._self_started = greet
         if greet:
             self.say(greeting())
         else:

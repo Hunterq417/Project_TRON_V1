@@ -130,6 +130,9 @@ class TronStateMachine:
         # Dictation (from Hey Jev). start_dictation ends the conversation and asks for this;
         # trigger() then runs it, and the next trigger — wake word or hotkey — stops it.
         self._dictate_after = False
+        self._enroll_after = ""       # a name: learn their voice once the conversation has ended
+        self._speaker = None          # this conversation's voices.Collector
+        self._self_started = False    # TRON opened the conversation (greeting, scheduled task)
         self._end_requested_at = 0.0
         self.dictation = None
         self._transcriber = None
@@ -224,6 +227,10 @@ class TronStateMachine:
                     asyncio.run(self._run_conversation())
                 else:
                     asyncio.run(self._run_conversation())
+                if self._enroll_after:
+                    self._learn_voice(self._enroll_after)
+                    self._enroll_after = ""
+                    break
                 if self._dictate_after:
                     self._dictate_after = False
                     self._run_dictation()
@@ -235,6 +242,20 @@ class TronStateMachine:
                                       "own manner, and ask what they need.")
         finally:
             self._busy.release()
+
+    def _learn_voice(self, name: str) -> None:
+        """Runs after the conversation, with the microphone free: chime, ~8 s of speech, then the result aloud."""
+        import tts
+        self._set_state(State.LISTENING)
+        try:
+            result = voices.enroll_voice({"name": name}, self._cfg)
+        except Exception as exc:
+            result = f"I couldn't learn the voice: {exc}"
+        self._set_state(State.SPEAKING)
+        try:
+            tts.say(result)
+        finally:
+            self._set_state(State.IDLE)
 
     @staticmethod
     def _active_id():
@@ -372,6 +393,16 @@ class TronStateMachine:
                 self._end_requested_at = time.monotonic()
                 return ("dictation starts after the chime once you finish this sentence. Tell the user to "
                         "start talking after the chime, and to say 'hey tron' or press the hotkey to stop")
+            refused = voices.owner_refusal(self._speaker, name, self._self_started)
+            if refused:
+                return refused
+            if name == "enroll_voice":
+                # The live conversation holds the microphone, so recording now heard almost nothing (and the model
+                # retried, chime after chime). Like dictation: end the conversation, then record with the mic free.
+                self._enroll_after = str((call["args"] or {}).get("name", "")).strip()
+                self._end_requested_at = time.monotonic()
+                return ("ok. Tell the user in one sentence: when you stop talking they'll hear a chime, and then they "
+                        "should talk naturally for about eight seconds. Don't call enroll_voice again.")
             if name == "not_for_me":
                 self._stop_now = True    # they're talking to someone else: go quiet, back to the wake word
                 return "ok, silent"
@@ -390,6 +421,7 @@ class TronStateMachine:
             return f"that failed, sir: {type(exc).__name__}: {exc}"
 
     async def _run_conversation(self) -> None:
+        self._self_started = bool(self._pending_note)
         self._end_requested_at = 0.0
         self._stop_now = False
         started = datetime.datetime.now()
@@ -428,7 +460,7 @@ class TronStateMachine:
                     return bool(self._end_requested_at) and now - self._end_requested_at > 2.0 \
                         and now - last_audio[0] > 1.2
 
-                speaker = voices.Collector()
+                speaker = self._speaker = voices.Collector()
 
                 async def send_loop() -> None:
                     was_listening = True

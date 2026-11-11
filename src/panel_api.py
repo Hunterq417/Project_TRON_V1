@@ -33,7 +33,7 @@ LOCAL_VOICES = [("david", "Microsoft David"), ("zira", "Microsoft Zira"), ("haze
 UI_MODELS = [("dust-orb", "Dust Orb"), ("aurora-orb", "Aurora Orb"), ("halo-ring", "Halo Ring")]
 KEYS = ("gemini_api_key", "openrouter_api_key", "smtp_app_password")
 PLAIN = ("smtp_host", "smtp_user", "hotspot_ssid", "hotkey")
-SWITCHES = ("local_brain_enabled", "memory_enabled", "brain_debug", "camera_enabled", "screen_enabled", "greet_by_face",
+SWITCHES = ("local_brain_enabled", "memory_enabled", "brain_debug", "camera_enabled", "screen_enabled", "greet_by_face", "only_obey_owner",
             "announce_calls", "announce_messages")
 _FAIL = re.compile(r"\b(fail|couldn't|could not|can't|cannot|isn't|not found|no tool|error|refused)", re.I)
 
@@ -280,7 +280,7 @@ class Api:
             import local_brain
             threading.Thread(target=local_brain.unload, args=(old.get("local_model") or local_brain.DEFAULT_MODEL,),
                              daemon=True).start()
-        live = {"announce_messages", "camera_enabled", "greet_by_face", "screen_enabled", "local_brain_enabled", "memory_enabled",
+        live = {"announce_messages", "camera_enabled", "greet_by_face", "only_obey_owner", "screen_enabled", "local_brain_enabled", "memory_enabled",
                 "brain_debug"}
         if not changed:
             return _ok("Nothing changed")
