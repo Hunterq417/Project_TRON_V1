@@ -277,7 +277,7 @@ dialog li span { color: var(--ink-3); font-size: 13px; }
       <h1>Settings</h1>
       <p class="lede">Changes save when you press Save. A few need a restart; they say so.</p>
       <div class="settings">
-        <ul class="anchors"><li><a href="#s-brain">Brain and voice</a></li><li><a href="#s-sound">Sound</a></li><li><a href="#s-wake">Waking and looks</a></li><li><a href="#s-phone">Phone</a></li><li><a href="#s-privacy">Privacy</a></li><li><a href="#s-keys">Keys</a></li></ul>
+        <ul class="anchors"><li><a href="#s-google">Google account</a></li><li><a href="#s-brain">Brain and voice</a></li><li><a href="#s-sound">Sound</a></li><li><a href="#s-wake">Waking and looks</a></li><li><a href="#s-phone">Phone</a></li><li><a href="#s-privacy">Privacy</a></li><li><a href="#s-keys">Keys</a></li></ul>
         <form id="settingsForm"></form>
       </div>
     </section>
@@ -466,7 +466,24 @@ const SETTINGS = [
     ["smtp_user", "Email address", "The account TRON sends from", "text", true],
     ["smtp_app_password", "Email app password", "A Gmail app password, not your real one", "password", true]]],
 ];
-function renderSettings({ values, options }) {
+function drawGoogle(g) {
+  const box = $("#gControl"); if (!box) return;
+  if (g.connected) {
+    box.innerHTML = `<span>Signed in${g.email ? " as <b>" + esc(g.email) + "</b>" : ""}</span>
+      <button type="button" class="btn danger" id="gOut" style="margin-left:12px">Disconnect</button>`;
+    $("#gOut").onclick = async () => { const r = await api.action("disconnect_google", null); toast(r.message); drawGoogle(r); };
+  } else if (g.can_sign_in) {
+    box.innerHTML = `<button type="button" class="btn primary" id="gIn">Sign in with Google</button>`;
+    $("#gIn").onclick = async () => {
+      const b = $("#gIn"); b.disabled = true; b.textContent = "Finish signing in in your browser…";
+      const r = await api.action("connect_google", null); toast(r.message); drawGoogle(r.connected ? r : await api.google());
+    };
+  } else {
+    box.innerHTML = `<span class="muted">This copy of TRON has no Google key. See docs/GOOGLE_SETUP.md.</span>`;
+  }
+}
+
+async function renderSettings({ values, options }) {
   $("#settingsForm").innerHTML = SETTINGS.map(([id, title, fields]) => `<h2 id="${id}">${title}</h2>` + fields.map(([k, label, hint, kind, restart]) => {
     let control;
     if (kind === "select") control = `<select name="${k}">${(options[k] || []).map(([v, l]) => `<option value="${esc(v)}" ${String(values[k] ?? "") === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
@@ -476,6 +493,10 @@ function renderSettings({ values, options }) {
     return `<div class="field"><label for="${k}">${label}${restart ? '<span class="restart" title="Takes effect after a restart">restart</span>' : ""}</label><small>${hint}</small><div class="control">${control}</div></div>`;
   }).join("")).join("") + `<div class="savebar"><button class="btn primary" type="submit">Save settings</button><span class="muted" id="saveNote"></span></div>`;
   $$("#settingsForm input, #settingsForm select").forEach(el => el.id = el.name);
+  $("#settingsForm").insertAdjacentHTML("afterbegin", `<h2 id="s-google">Google account</h2>
+    <div class="field"><label>Gmail and Calendar</label><small id="gHint">For FRIDAY: mail, calendar and meetings</small>
+    <div class="control" id="gControl"><span class="muted">Checking…</span></div></div>`);
+  drawGoogle(await api.google());
 }
 $("#settingsForm").onsubmit = async e => {
   e.preventDefault();

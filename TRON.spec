@@ -49,6 +49,10 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 datas += [('src/assets/dust_orb', 'assets/dust_orb')]
 # the control panel page (panel_api.py serves it; WebView2 shows it via pywebview)
 datas += [('src/assets/panel', 'assets/panel')]
+# Your Google OAuth key, built in so people you share TRON with just sign in. Kept out of git (.gitignore).
+import os
+if os.path.exists('google_client_secret.json'):
+    datas += [('google_client_secret.json', 'assets')]
 tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

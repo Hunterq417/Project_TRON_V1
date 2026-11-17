@@ -14,7 +14,7 @@ from email.mime.text import MIMEText
 import config
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/calendar.events"]
-CLIENT_FILE = config.app_dir() / "google_client_secret.json"
+CLIENT_FILE = config.app_dir() / "google_client_secret.json"   # your own key, if you put one next to TRON
 TOKEN_FILE = config.app_dir() / "memory" / "google_token.json"
 NOT_CONNECTED = ("Google isn't connected yet, sir. Put google_client_secret.json next to TRON and say "
                  "'connect Google' (docs/GOOGLE_SETUP.md).")
@@ -28,14 +28,62 @@ def _creds(interactive: bool = False):
         return creds
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
-    elif interactive and CLIENT_FILE.exists():
+    elif interactive and client_file():
         from google_auth_oauthlib.flow import InstalledAppFlow
-        creds = InstalledAppFlow.from_client_secrets_file(str(CLIENT_FILE), SCOPES).run_local_server(port=0)
+        creds = InstalledAppFlow.from_client_secrets_file(str(client_file()), SCOPES).run_local_server(
+            port=0, success_message="TRON is connected to Google. You can close this tab.")
     else:
         return None
     TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
     return creds
+
+
+def client_file():
+    """The OAuth key to sign in with: one placed next to TRON wins, else the one built into TRON.exe (so
+    people TRON is shared with just sign in). None when neither exists."""
+    import sys
+    from pathlib import Path
+    bundled = Path(getattr(sys, "_MEIPASS", "")) / "assets" / "google_client_secret.json"
+    candidates = (CLIENT_FILE, bundled) if getattr(sys, "_MEIPASS", None) else (CLIENT_FILE,)
+    return next((path for path in candidates if path.exists()), None)
+
+
+def account() -> dict:
+    """{"connected", "email", "can_sign_in"} for the control panel."""
+    status = {"connected": False, "email": "", "can_sign_in": client_file() is not None}
+    gmail = None
+    try:
+        gmail = _service("gmail", "v1")
+    except Exception:
+        pass
+    if gmail is not None:
+        status["connected"] = True
+        try:
+            status["email"] = gmail.users().getProfile(userId="me").execute().get("emailAddress", "")
+        except Exception:
+            pass   # signed in but offline: still connected
+    return status
+
+
+def disconnect_google() -> str:
+    """Signs out: asks Google to revoke TRON's access, then deletes the saved sign-in."""
+    if not TOKEN_FILE.exists():
+        return "Google wasn't connected"
+    try:
+        import json
+        import urllib.parse
+        import urllib.request
+        token = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
+        data = urllib.parse.urlencode({"token": token.get("refresh_token") or token.get("token")}).encode()
+        urllib.request.urlopen("https://oauth2.googleapis.com/revoke", data=data, timeout=10)
+        revoked = True
+    except Exception:
+        revoked = False   # offline or already revoked: still sign out here
+    TOKEN_FILE.unlink(missing_ok=True)
+    return "Signed out of Google" + ("" if revoked else
+                                    " on this PC (Google couldn't be reached to cancel access; remove TRON at "
+                                    "myaccount.google.com/permissions if you want)")
 
 
 def _service(name: str, version: str):
@@ -48,7 +96,7 @@ def _service(name: str, version: str):
 
 def connect_google() -> str:
     """Sign in to Google once (opens the browser). Needed before mail and calendar work."""
-    if not CLIENT_FILE.exists():
+    if client_file() is None:
         return NOT_CONNECTED
     return "Google is connected, sir." if _creds(interactive=True) else "Google sign-in didn't finish, sir."
 

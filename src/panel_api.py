@@ -366,7 +366,16 @@ class Api:
 
     def _act_connect_google(self, _):
         import google_services
-        return _ok(google_services.connect_google().replace(", sir", ""))
+        message = google_services.connect_google().replace(", sir", "")
+        return {"ok": "connected" in message, "message": message, **google_services.account()}
+
+    def _act_disconnect_google(self, _):
+        import google_services
+        return _ok(google_services.disconnect_google(), **google_services.account())
+
+    def google(self):
+        import google_services
+        return google_services.account()
 
     def _cfg_obj(self):
         return getattr(self.machine, "_cfg", None) if self.machine else config.load_config()

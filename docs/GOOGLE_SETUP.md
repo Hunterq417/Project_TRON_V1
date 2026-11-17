@@ -1,6 +1,19 @@
 # Connecting FRIDAY to Google (Gmail, Calendar, Meet)
 
-You do this once. It's free.
+**Using TRON:** open the control panel > **Settings > Google account** > **Sign in with Google** (or say "Friday,
+connect Google"), pick your account and allow access. **Disconnect** there signs you out and cancels TRON's access
+at Google.
+
+**Building TRON to share it:** do the steps below once. When `google_client_secret.json` is in the repository root
+at build time, `TRON.spec` builds it into TRON.exe, so the people you share it with only sign in. Git ignores the
+file, so it never reaches GitHub. Until your Google app is published, add each person as a **test user**
+(Audience > Test users). Published but unverified apps show a "Google hasn't verified this app" warning and allow
+about 100 users; a public release needs Google's verification, and reading Gmail needs its yearly security
+assessment as well.
+
+## One-time setup (the developer)
+
+It's free.
 
 1. Go to https://console.cloud.google.com/ and create a project, for example "TRON".
 2. Under **APIs & Services > Library**, enable the **Gmail API** and the **Google Calendar API**.

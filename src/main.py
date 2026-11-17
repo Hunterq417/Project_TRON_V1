@@ -162,6 +162,16 @@ def _selftest() -> None:
         path = imageio_ffmpeg.get_ffmpeg_exe()
         return f"ffmpeg present ({os.path.getsize(path) // 1_000_000} MB)"
 
+    def google_sign_in():
+        import google_services
+        key = google_services.client_file()
+        if key is None:
+            raise RuntimeError("no Google key: Sign in with Google can't work in this copy")
+        status = google_services.account()
+        where = "built into TRON.exe" if key != google_services.CLIENT_FILE else "next to TRON"
+        return f"key {where}; " + (f"signed in as {status['email'] or 'a Google account'}" if status["connected"]
+                                   else "not signed in yet")
+
     def new_modules():
         import importlib
         for module in ("panel_api", "dictation", "timers", "brain", "music", "convo_log", "computer", "skills", "offline", "local_brain",
@@ -185,7 +195,7 @@ def _selftest() -> None:
         tts.synth("Ready.")
         return f"local speech recognition, TRON's voice ({tts.VOICE}) and echo cancellation work ({time.time() - started:.1f}s)"
 
-    for name, check in (("browser_video", browser_video), ("bundled_ffmpeg", bundled_ffmpeg),
+    for name, check in (("browser_video", browser_video), ("bundled_ffmpeg", bundled_ffmpeg), ("google_sign_in", google_sign_in),
                         ("new_modules", new_modules), ("offline_speech", offline_speech)):
         checks.append(name)
         started = time.time()

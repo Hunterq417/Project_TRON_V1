@@ -34,3 +34,22 @@ def test_tron_and_the_mcp_server_offer_the_same_google_tools():
     names = {t.name for t in asyncio.run(google_mcp.server.list_tools())}
     assert names == {fn.__name__ for fn in g.FUNCTIONS}
     assert names <= {d["name"] for d in tools.TOOL_DECLARATIONS}
+
+
+def test_panel_sign_in_status_and_disconnect(tmp_path, monkeypatch):
+    monkeypatch.setattr(g, "CLIENT_FILE", tmp_path / "google_client_secret.json")
+    monkeypatch.setattr(g, "TOKEN_FILE", tmp_path / "google_token.json")
+    monkeypatch.setattr(g, "_creds", lambda interactive=False: None)
+    assert g.account() == {"connected": False, "email": "", "can_sign_in": False}   # no key anywhere
+    (tmp_path / "google_client_secret.json").write_text("{}", encoding="utf-8")
+    assert g.account()["can_sign_in"] is True
+    profile = MagicMock()
+    profile.users().getProfile().execute.return_value = {"emailAddress": "shivansh@example.com"}
+    monkeypatch.setattr(g, "_service", lambda *a: profile)
+    assert g.account() == {"connected": True, "email": "shivansh@example.com", "can_sign_in": True}
+    (tmp_path / "google_token.json").write_text('{"refresh_token": "r"}', encoding="utf-8")
+    revoked = []
+    monkeypatch.setattr("urllib.request.urlopen", lambda url, data=None, timeout=0: revoked.append(url))
+    assert g.disconnect_google() == "Signed out of Google"
+    assert revoked == ["https://oauth2.googleapis.com/revoke"] and not (tmp_path / "google_token.json").exists()
+    assert g.disconnect_google() == "Google wasn't connected"
