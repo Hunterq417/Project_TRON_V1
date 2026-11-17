@@ -394,6 +394,7 @@ class LocalSession:
         import voices
         self._speaker = voices.Collector()
         self._self_started = False   # set by run(greet=True): TRON opened this conversation
+        self.quiet_turn = False
         self._speak = speak
 
     def _listen(self, offline):
@@ -444,8 +445,8 @@ class LocalSession:
         if refused:
             return refused
         if name == "not_for_me":
-            self.handed_over = True    # ends the conversation quietly; nothing is said
-            return "ok, silent"
+            self.quiet_turn = True     # nothing is said this turn; the conversation keeps listening
+            return "ok: stay silent this turn and keep listening; answer the next thing that IS said to you"
         if name == "start_dictation":
             self.dictate_after = True
             return "Dictation starts after the chime. Say hey tron or press the hotkey when you're done, sir."
@@ -479,6 +480,7 @@ class LocalSession:
                 winsound.PlaySound(r"C:\Windows\Media\Speech On.wav", winsound.SND_FILENAME | winsound.SND_NODEFAULT)
             except Exception:
                 pass
+        quiet_streak = 0
         for _ in range(max_turns):
             if self._should_stop():
                 break
@@ -501,6 +503,13 @@ class LocalSession:
                 self.log.append(("note", f"local brain failed: {type(exc).__name__}: {exc}"))
             self.guard.turn_over()
             latency.record("response", heard, brain="local")
+            if self.quiet_turn:          # not said to TRON: say nothing, keep listening
+                self.quiet_turn = False
+                quiet_streak += 1
+                if quiet_streak >= 3:
+                    break
+                continue
+            quiet_streak = 0
             self.say(answer)
             if self.dictate_after or self.handed_over:
                 break

@@ -974,8 +974,9 @@ TOOL_DECLARATIONS += computer.DECLARATIONS + [skills.DECLARATION] + routine.DECL
     "description": "Call INSTEAD of answering when what you just heard wasn't said to you: the user talking to "
                    "another person or on the phone, someone else in the room, a video or song playing, "
                    "background chatter. Signs: another person's name used as the addressee, a reply to a "
-                   "voice you didn't hear, talk that doesn't fit your conversation. Ends the conversation "
-                   "silently; they can wake you again. When unsure and it doesn't sound like a request, call it.",
+                   "voice you didn't hear, talk that doesn't fit your conversation. You stay silent this turn "
+                   "and keep listening: the user can talk to you again without the wake word. When unsure "
+                   "and it doesn't sound like a request, call it.",
     "parameters": {"type": "object", "properties": {}},
 }, {
     "name": "switch_assistant",

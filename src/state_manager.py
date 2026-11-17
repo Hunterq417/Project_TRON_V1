@@ -95,6 +95,9 @@ class State(Enum):
 _RETRIGGERABLE = (State.IDLE, State.ERROR)
 
 
+NOT_FOR_ME_LIMIT = 3   # this many not-for-me turns in a row: the user is talking to someone else
+
+
 class TronStateMachine:
     def __init__(
         self,
@@ -132,6 +135,8 @@ class TronStateMachine:
         self._dictate_after = False
         self._enroll_after = ""       # a name: learn their voice once the conversation has ended
         self._speaker = None          # this conversation's voices.Collector
+        self._quiet_turn = False      # not_for_me: drop this turn's reply audio
+        self._not_for_me_streak = 0
         self._self_started = False    # TRON opened the conversation (greeting, scheduled task)
         self._end_requested_at = 0.0
         self.dictation = None
@@ -404,8 +409,13 @@ class TronStateMachine:
                 return ("ok. Tell the user in one sentence: when you stop talking they'll hear a chime, and then they "
                         "should talk naturally for about eight seconds. Don't call enroll_voice again.")
             if name == "not_for_me":
-                self._stop_now = True    # they're talking to someone else: go quiet, back to the wake word
-                return "ok, silent"
+                # Silent for this turn only: the conversation stays open, so the user's next request needs no
+                # wake word. Several in a row means they're talking to someone else: back to the wake word.
+                self._quiet_turn = True
+                self._not_for_me_streak += 1
+                if self._not_for_me_streak >= NOT_FOR_ME_LIMIT:
+                    self._stop_now = True
+                return "ok: stay silent this turn and keep listening; answer the next thing that IS said to you"
             if name in tools.VISION_TOOL_NAMES:
                 return await self._handle_vision_tool(name, session)
             handler = tools.TOOL_DISPATCH.get(name)
@@ -422,6 +432,7 @@ class TronStateMachine:
 
     async def _run_conversation(self) -> None:
         self._self_started = bool(self._pending_note)
+        self._quiet_turn, self._not_for_me_streak = False, 0
         self._end_requested_at = 0.0
         self._stop_now = False
         started = datetime.datetime.now()
@@ -515,6 +526,9 @@ class TronStateMachine:
                         if event["type"] == "audio":
                             if self._stop_now:
                                 return
+                            if self._quiet_turn:
+                                continue      # not said to TRON: whatever the model says anyway stays unheard
+                            self._not_for_me_streak = 0
                             guard.turn_over()
                             if spoke_ns[0]:
                                 latency.record("response", spoke_ns[0])
@@ -551,6 +565,7 @@ class TronStateMachine:
                             else:
                                 guard.turn_over()
                         elif event["type"] == "turn_complete":
+                            self._quiet_turn = False
                             self._set_state(State.THINKING)
                             log.flush(fragments)
                         elif event["type"] == "go_away":
