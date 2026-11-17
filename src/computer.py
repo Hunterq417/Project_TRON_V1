@@ -17,6 +17,7 @@ usual folders and opens the best match.
 import ctypes
 import difflib
 import os
+import re
 import time
 from ctypes import wintypes
 from pathlib import Path
@@ -30,6 +31,7 @@ _KINDS = {  # UIA control type id -> what we call it
 }
 _MAX = 60
 _elements: dict = {}   # number -> UIA element, from the last screen_elements call
+_listed_names: dict = {}   # number -> the name it had when listed: a page that redrew reuses elements
 _SEARCH_DIRS = ("Desktop", "Documents", "Downloads", "Pictures", "Videos", "Music", "OneDrive")
 
 
@@ -99,6 +101,7 @@ def screen_elements(args, cfg=None) -> str:
     root.FindAll(lib.TreeScope_Descendants, uia.CreateTrueCondition())   # Chromium apps build the tree on request
     found = uia.ElementFromHandle(hwnd).FindAll(lib.TreeScope_Descendants, uia.CreateTrueCondition())
     _elements.clear()
+    _listed_names.clear()
     lines, seen = [], set()
     for i in range(found.Length):
         element = found.GetElement(i)
@@ -112,6 +115,7 @@ def screen_elements(args, cfg=None) -> str:
         seen.add(key)
         number = len(_elements) + 1
         _elements[number] = element
+        _listed_names[number] = name
         lines.append(f'{number}. {kind} "{name[:60]}"')
         if number >= _MAX:
             lines.append("(more not shown; scroll or name the app to narrow it)")
@@ -156,6 +160,13 @@ def click_element(args, cfg=None) -> str:
         return "that number isn't on the list any more; call screen_elements again"
     double = bool(args.get("double", False))
     name = element_name(number)
+    if name.strip() != _listed_names.get(number, name).strip():
+        # The page redrew since the list was made: #20 was "Clear Selection", by then it was something blank,
+        # and the click landed elsewhere. Never click a number whose control has changed.
+        _elements.clear()
+        return (f'the screen changed since I listed it (#{number} was "{_listed_names.get(number, "")}"). '
+                "Call screen_elements again and pick from the new list")
+    _elements.clear()   # a click usually changes the page: the next click needs a fresh list
     _uia_obj, lib = _uia()
     try:
         if not double:
@@ -178,10 +189,54 @@ def type_text(args, cfg=None) -> str:
     text = str(args.get("text", ""))
     if not text:
         return "what should I type, sir?"
+    if not _typing_target_ok():
+        return ("nothing to type into has the keyboard focus, so I didn't type (Enter could have done anything). "
+                "Call screen_elements, click the text box, then type")
     keyboard.write(text, delay=0.01)
     if args.get("enter"):
+        _elements.clear()
         keyboard.send("enter")
     return f'typed "{text[:60]}"' + (" and pressed Enter" if args.get("enter") else "")
+
+
+_TYPEABLE = {50004, 50030, 50003}   # UIA Edit, Document, ComboBox
+
+
+def _typing_target_ok() -> bool:
+    """Is a text box focused? Typing (and its Enter) into a tab strip or a page once switched the user's tab.
+    True when UI Automation can't tell: better to type than to refuse in an app it can't read."""
+    try:
+        uia, _lib = _uia()
+        focused = uia.GetFocusedElement()
+        return focused is None or focused.CurrentControlType in _TYPEABLE
+    except Exception:
+        return True
+
+
+def switch_to_tab(query: str) -> str:
+    """Bring a browser tab to the front by words from its title ("the LinkedIn tab"). "" when none matches."""
+    import desktop_control
+    words = [w for w in query.lower().split() if w not in ("tab", "the", "my", "last")]
+    if not words:
+        return ""
+    uia, lib = _uia()
+    tab_type = uia.CreatePropertyCondition(lib.UIA_ControlTypePropertyId, 50019)   # TabItem
+    for browser in ("brave", "chrome", "edge", "firefox", "opera"):
+        for hwnd, _title, _process in desktop_control._app_hits(browser):
+            tabs = uia.ElementFromHandle(hwnd).FindAll(lib.TreeScope_Descendants, tab_type)
+            for i in range(tabs.Length):
+                tab = tabs.GetElement(i)
+                name = (tab.CurrentName or "")
+                if all(w in name.lower() for w in words):
+                    desktop_control._bring_to_front(hwnd)
+                    try:
+                        tab.GetCurrentPattern(lib.UIA_SelectionItemPatternId).QueryInterface(
+                            lib.IUIAutomationSelectionItemPattern).Select()
+                    except Exception:
+                        _real_click(tab)
+                    title = re.sub(r" - (Memory usage|Audio playing|Pinned).*$", "", name)
+                    return f'switched to the "{title[:70]}" tab'
+    return ""
 
 
 def press_keys(args, cfg=None) -> str:

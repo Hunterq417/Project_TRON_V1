@@ -86,6 +86,10 @@ HOUSE_RULES = (
     "- To click something on screen: call screen_elements first, then click_element with a number from THAT "
     "list, and only the item the user asked for. If a number is stale, call screen_elements again yourself; "
     "never ask permission to look, and never click something else because it happens to be item 1.\n"
+    "- On a website, a word like Posts, People, Jobs or Videos said about results means that site's filter for "
+    "the current search, not its main menu link of the same name. Prefer the site's own search URL when it has "
+    "one (LinkedIn posts: open_website https://www.linkedin.com/search/results/content/?keywords=...).\n"
+    "- 'Go back to the X tab' means switch tabs (focus_app finds browser tabs by name), not open X again.\n"
     "- Never give up after one failed try: try the obvious alternative first, then say what you tried."
 )
 

@@ -402,7 +402,9 @@ def focus_app(args, cfg=None) -> str:
         return "which app should I switch to, sir?"
     hits = _app_hits(query)
     if not hits:
-        return f'"{query}" is not open, sir. I can open it instead'
+        import computer
+        tab = computer.switch_to_tab(query)   # "LinkedIn" is a Brave tab, not a window of its own
+        return f"{tab}, sir" if tab else f'"{query}" is not open, sir. I can open it instead'
     _bring_to_front(hits[0][0])
     return f'switched to "{hits[0][1]}", sir'
 
