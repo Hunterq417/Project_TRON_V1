@@ -154,8 +154,9 @@ def _foreground() -> int:
 # Windows that ARE the desktop. Closing these takes the taskbar or the desktop
 # itself down, and "close explorer" would otherwise match them, because folder
 # windows and the shell are the same process.
+# The hidden-icons pop-up too: "minimise the mini tray" once minimised it, and the taskbar arrow stopped working.
 _SHELL_CLASSES = {"Progman", "Shell_TrayWnd", "WorkerW", "Shell_SecondaryTrayWnd",
-                  "Windows.UI.Core.CoreWindow"}
+                  "Windows.UI.Core.CoreWindow", "TopLevelWindowForOverflowXamlIsland"}
 
 # Dropped before matching: people say "close the browser window", and "window"
 # or "the" would otherwise match everything on screen.

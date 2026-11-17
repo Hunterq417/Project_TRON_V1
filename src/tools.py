@@ -351,6 +351,7 @@ TOOL_DISPATCH = {
     "current_time": _current_time,
     "use_skill": skills.use_skill,
     "switch_assistant": _switch_assistant,
+    "show_hidden_icons": computer.show_hidden_icons,
     "identify_object": objects.identify_object,
     "schedule_task": scheduler.schedule_task,
     "list_schedules": scheduler.list_schedules,

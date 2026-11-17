@@ -42,3 +42,14 @@ def test_gemini_goes_quiet_for_the_turn_and_ends_only_after_a_streak():
         reply = asyncio.run(machine._run_tool(call, None))
         assert machine._quiet_turn and "keep listening" in reply
         assert machine._stop_now is expected_stop
+
+
+def test_the_hidden_icons_tray_is_never_treated_as_an_app():
+    """'Minimise the mini tray' once minimised Windows' hidden-icons pop-up and the taskbar arrow stopped
+    opening it. The pop-up is a shell window now: close/minimise/focus can't match it."""
+    import computer
+    import desktop_control
+    import tools
+    assert "TopLevelWindowForOverflowXamlIsland" in desktop_control._SHELL_CLASSES
+    assert tools.TOOL_DISPATCH["show_hidden_icons"] is computer.show_hidden_icons
+    assert any(w in "mini tray" for w in computer._TRAY_WORDS)

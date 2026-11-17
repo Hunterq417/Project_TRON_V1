@@ -40,8 +40,43 @@ def _uia():
     return comtypes.client.CreateObject("{ff48dba4-60ef-4201-aa87-54103eef594e}", interface=lib.IUIAutomation), lib
 
 
+_TRAY_WORDS = ("tray", "hidden icon", "notification area", "system tray")
+
+
+def _overflow_window():
+    """Windows' hidden-icons pop-up, repaired if something minimised it (it then never opens again)."""
+    hwnd = user32.FindWindowW("TopLevelWindowForOverflowXamlIsland", None)
+    if hwnd and user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)    # SW_RESTORE
+        user32.ShowWindow(hwnd, 0)    # SW_HIDE: closed, the way Windows keeps it
+    return hwnd
+
+
+def show_hidden_icons(args=None, cfg=None) -> str:
+    """Tool: open the taskbar's hidden-icons tray (the ^ arrow, "mini tray")."""
+    _overflow_window()
+    uia, lib = _uia()
+    tray = user32.FindWindowW("Shell_TrayWnd", None)
+    # Windows 11 draws the taskbar's buttons inside this child; older builds put them on the taskbar itself.
+    bridge = user32.FindWindowExW(tray, None, "Windows.UI.Composition.DesktopWindowContentBridge", None)
+    taskbar = uia.ElementFromHandle(bridge or tray)
+    found = taskbar.FindAll(lib.TreeScope_Descendants, uia.CreateTrueCondition())
+    for i in range(found.Length):
+        button = found.GetElement(i)
+        if "hidden icons" in (button.CurrentName or "").lower():
+            button.GetCurrentPattern(lib.UIA_InvokePatternId).QueryInterface(lib.IUIAutomationInvokePattern).Invoke()
+            time.sleep(0.6)
+            return ("opened the hidden icons tray. To click an icon in it, call screen_elements(app=\"tray\") "
+                    "and click the one the user named")
+    return "I couldn't find the hidden icons arrow on the taskbar, sir"
+
+
 def _target_window(app: str):
     import desktop_control
+    if app and any(word in app.lower() for word in _TRAY_WORDS):
+        hwnd = _overflow_window()
+        if hwnd and user32.IsWindowVisible(hwnd):
+            return hwnd, "Hidden icons tray"
     if app:
         hits = desktop_control._app_hits(app)
         if hits:
@@ -204,6 +239,10 @@ def find_file(args, cfg=None) -> str:
 
 
 DECLARATIONS = [
+    {"name": "show_hidden_icons",
+     "description": "Open the taskbar's hidden-icons tray (the ^ arrow by the clock). The user may call it the "
+                    "mini tray, system tray or hidden icons. Never minimise or close it.",
+     "parameters": {"type": "object", "properties": {}}},
     {
         "name": "screen_elements",
         "description": (
