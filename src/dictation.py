@@ -72,6 +72,15 @@ def read_vocab() -> dict:
         return {}
 
 
+def vocab_hint() -> str:
+    """The user's dictionary as a line for a conversation's instructions, so speech recognition expects their names
+    and terms ("Mayukh", not "my uke"). "" when the dictionary is empty."""
+    entries = [f"{word} (may sound like: {', '.join(heard)})" if heard else word
+               for word, heard in read_vocab().items()]
+    return ("Words this user uses that speech recognition may mishear; prefer these spellings: "
+            + "; ".join(entries[:60]) + ".") if entries else ""
+
+
 def save_vocab(words: dict) -> None:
     vocab_path().write_text(json.dumps(words, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 

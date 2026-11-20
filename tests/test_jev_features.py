@@ -341,3 +341,12 @@ def test_relaunch_asks_the_new_exe_to_unpack_afresh(monkeypatch):
     main._launch_tron()
     assert seen["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
     assert seen["cmd"][-1].endswith("main.py")   # from source; the frozen exe relaunches itself
+
+
+def test_the_dictionary_becomes_a_hearing_hint(monkeypatch):
+    import dictation
+    monkeypatch.setattr(dictation, "read_vocab", lambda: {"Mayukh": ["my uke"], "TRON": []})
+    hint = dictation.vocab_hint()
+    assert "Mayukh (may sound like: my uke)" in hint and "TRON" in hint
+    monkeypatch.setattr(dictation, "read_vocab", lambda: {})
+    assert dictation.vocab_hint() == ""

@@ -95,6 +95,12 @@ class State(Enum):
 _RETRIGGERABLE = (State.IDLE, State.ERROR)
 
 
+def _connection_dropped(exc) -> bool:
+    """A network-level drop worth resuming from, as opposed to a real error (a bad request, a crash)."""
+    text = f"{type(exc).__name__} {exc}"
+    return any(sign in text for sign in ("1006", "1011", "ConnectionClosed", "abnormal closure", "going away"))
+
+
 NOT_FOR_ME_LIMIT = 3   # this many not-for-me turns in a row: the user is talking to someone else
 
 
@@ -136,6 +142,8 @@ class TronStateMachine:
         self._enroll_after = ""       # a name: learn their voice once the conversation has ended
         self._speaker = None          # this conversation's voices.Collector
         self._quiet_turn = False      # not_for_me: drop this turn's reply audio
+        self._resume_handle = None    # Gemini's session-resumption handle for this conversation
+        self._resuming = False
         self._not_for_me_streak = 0
         self._self_started = False    # TRON opened the conversation (greeting, scheduled task)
         self._end_requested_at = 0.0
@@ -179,7 +187,9 @@ class TronStateMachine:
         blank gaps that read as missing instructions."""
         blocks = (
             self._persona_text,
+            brain.COMMAND_MATRIX,
             brain.HOUSE_RULES,
+            dictation.vocab_hint(),
             skills.context(),
             _time_context(),
             memory.long_term_context(),
@@ -432,6 +442,7 @@ class TronStateMachine:
 
     async def _run_conversation(self) -> None:
         self._self_started = bool(self._pending_note)
+        self._resume_handle, self._resuming = None, False   # a handle belongs to one conversation
         self._quiet_turn, self._not_for_me_streak = False, 0
         self._end_requested_at = 0.0
         self._stop_now = False
@@ -462,125 +473,147 @@ class TronStateMachine:
             # leave a log line, not raise into the hotkey thread.
             self._audio.start()
             self._set_state(State.LISTENING)
-            async with self._session_factory() as session:
+            # A dropped connection (1006) or Google's go-away rejoins the same conversation with its
+            # resumption handle, instead of ending it mid-task. Twice at most.
+            for attempt in range(3):
+                live = self._session_factory()
+                if self._resume_handle and hasattr(live, "resume_with"):
+                    live.resume_with(self._resume_handle)
+                async with live as session:
 
-                def wrapping_up() -> bool:
-                    """A tool asked to end the conversation (start_dictation): let TRON finish
-                    saying so, then hang up — once a second has passed with no audio from it."""
-                    now = time.monotonic()
-                    return bool(self._end_requested_at) and now - self._end_requested_at > 2.0 \
-                        and now - last_audio[0] > 1.2
+                    def wrapping_up() -> bool:
+                        """A tool asked to end the conversation (start_dictation): let TRON finish
+                        saying so, then hang up — once a second has passed with no audio from it."""
+                        now = time.monotonic()
+                        return bool(self._end_requested_at) and now - self._end_requested_at > 2.0 \
+                            and now - last_audio[0] > 1.2
 
-                speaker = self._speaker = voices.Collector()
+                    speaker = self._speaker = voices.Collector()
 
-                async def send_loop() -> None:
-                    was_listening = True
-                    last_voice = time.monotonic()
-                    echo_floor, loud_run = 0.0, 0
-                    while (time.monotonic() - last_activity < self._silence_timeout_s
-                           and not recv_task.done() and not wrapping_up() and not self._stop_now):
-                        # A stop phrase is acted on as soon as the user has finished saying it, even if
-                        # TRON already started answering: "shut up" got "Okay sir" and then "Understood,
-                        # I shall remain quiet" when this waited for the answer to begin.
-                        if last_user_words[0] and time.monotonic() - last_user_words[0] > 0.5 \
-                                and brain.is_stop(guard.current()):
-                            stop_phrase_heard()
-                            break
-                        chunk = self._audio.drain_mic()
-                        if chunk:
-                            level = rms_level(chunk)
-                            if time.monotonic() - last_audio[0] < _ECHO_TAIL:
-                                # TRON is talking: what the mic hears is mostly TRON.
-                                loud = level >= max(_BARGE_IN_LEVEL, echo_floor * _BARGE_IN_OVER_ECHO)
-                                loud_run = loud_run + 1 if loud else 0
-                                echo_floor = 0.9 * echo_floor + 0.1 * level if not loud else echo_floor
-                                if loud_run < 2:
-                                    await session.send_audio_chunk(bytes(len(chunk)), SAMPLE_RATE_IN)
-                                    await asyncio.sleep(0.05)
-                                    continue
-                            else:
-                                echo_floor, loud_run = 0.0, 0
-                                speaker.add_pcm16(chunk)   # TRON is quiet: this is the user's voice
-                            # Gemini's own turn detection needs the stream to be
-                            # continuous, so every chunk goes out including the
-                            # quiet ones. Only speech counts as activity.
-                            await session.send_audio_chunk(chunk, SAMPLE_RATE_IN)
-                            if level >= _SPEECH_LEVEL:
-                                # Loudness only drives the orb. It used to keep the conversation alive too,
-                                # and with music playing a conversation never ended (nor got logged). Only
-                                # words Gemini actually transcribes count as the user still talking.
-                                last_voice = time.monotonic()
-                                spoke_ns[0] = latency.now_ns()
-                                if not was_listening:
-                                    self._set_state(State.LISTENING)
-                                    was_listening = True
-                        if was_listening and time.monotonic() - last_voice > _PAUSE_BEFORE_THINKING:
-                            self._set_state(State.THINKING)
-                            was_listening = False
-                        await asyncio.sleep(0.05)
+                    async def send_loop() -> None:
+                        was_listening = True
+                        last_voice = time.monotonic()
+                        echo_floor, loud_run = 0.0, 0
+                        while (time.monotonic() - last_activity < self._silence_timeout_s
+                               and not recv_task.done() and not wrapping_up() and not self._stop_now):
+                            # A stop phrase is acted on as soon as the user has finished saying it, even if
+                            # TRON already started answering: "shut up" got "Okay sir" and then "Understood,
+                            # I shall remain quiet" when this waited for the answer to begin.
+                            if last_user_words[0] and time.monotonic() - last_user_words[0] > 0.5 \
+                                    and brain.is_stop(guard.current()):
+                                stop_phrase_heard()
+                                break
+                            chunk = self._audio.drain_mic()
+                            if chunk:
+                                level = rms_level(chunk)
+                                if time.monotonic() - last_audio[0] < _ECHO_TAIL:
+                                    # TRON is talking: what the mic hears is mostly TRON.
+                                    loud = level >= max(_BARGE_IN_LEVEL, echo_floor * _BARGE_IN_OVER_ECHO)
+                                    loud_run = loud_run + 1 if loud else 0
+                                    echo_floor = 0.9 * echo_floor + 0.1 * level if not loud else echo_floor
+                                    if loud_run < 2:
+                                        await session.send_audio_chunk(bytes(len(chunk)), SAMPLE_RATE_IN)
+                                        await asyncio.sleep(0.05)
+                                        continue
+                                else:
+                                    echo_floor, loud_run = 0.0, 0
+                                    speaker.add_pcm16(chunk)   # TRON is quiet: this is the user's voice
+                                # Gemini's own turn detection needs the stream to be
+                                # continuous, so every chunk goes out including the
+                                # quiet ones. Only speech counts as activity.
+                                await session.send_audio_chunk(chunk, SAMPLE_RATE_IN)
+                                if level >= _SPEECH_LEVEL:
+                                    # Loudness only drives the orb. It used to keep the conversation alive too,
+                                    # and with music playing a conversation never ended (nor got logged). Only
+                                    # words Gemini actually transcribes count as the user still talking.
+                                    last_voice = time.monotonic()
+                                    spoke_ns[0] = latency.now_ns()
+                                    if not was_listening:
+                                        self._set_state(State.LISTENING)
+                                        was_listening = True
+                            if was_listening and time.monotonic() - last_voice > _PAUSE_BEFORE_THINKING:
+                                self._set_state(State.THINKING)
+                                was_listening = False
+                            await asyncio.sleep(0.05)
 
-                async def recv_loop() -> None:
-                    async for event in session.receive():
-                        if event["type"] in ("audio", "tool_call") and stop_phrase_heard():
-                            return          # ends the conversation; nothing more is said or done
-                        if event["type"] == "audio":
-                            if self._stop_now:
-                                return
-                            if self._quiet_turn:
-                                continue      # not said to TRON: whatever the model says anyway stays unheard
-                            self._not_for_me_streak = 0
-                            guard.turn_over()
-                            if spoke_ns[0]:
-                                latency.record("response", spoke_ns[0])
-                                spoke_ns[0] = 0
-                            self._set_state(State.SPEAKING)
-                            # Off the loop: write() blocks until the device
-                            # buffer has room, which starved send_loop.
-                            await asyncio.to_thread(self._audio.play_chunk, event["data"])
-                            last_audio[0] = time.monotonic()
-                            self._on_audio_level(rms_level(event["data"]))
-                            touch()
-                        elif event["type"] == "tool_call":
-                            self._set_state(State.ACTING)
-                            for call in event["calls"]:
-                                refused = guard.check(call["name"], call["args"])
-                                began = latency.now_ns()
-                                result = refused or await self._run_tool(call, session)
-                                latency.record("tool", began, detail=call["name"])
-                                fragments.append(("tool", convo_log.tool_line(
-                                    call["name"], call["args"], ("REFUSED BY SAFETY CHECK: " if refused else "") + result)))
-                                memory.log_activity({
-                                    "tool": call["name"], "args": call["args"], "result": result
-                                })
-                                await session.send_tool_response(call["id"], call["name"], result)
-                            touch()
-                        elif event["type"] == "transcript":
-                            # Fragments, not utterances — joined into turns when
-                            # the conversation ends. See memory.join_transcript.
-                            fragments.append((event["role"], event["text"]))
-                            if event["role"] == "user":
-                                guard.user_said(event["text"])
-                                last_user_words[0] = time.monotonic()
-                                touch()
-                            else:
+                    async def recv_loop() -> None:
+                        async for event in session.receive():
+                            if event["type"] in ("audio", "tool_call") and stop_phrase_heard():
+                                return          # ends the conversation; nothing more is said or done
+                            if event["type"] == "audio":
+                                if self._stop_now:
+                                    return
+                                if self._quiet_turn:
+                                    continue      # not said to TRON: whatever the model says anyway stays unheard
+                                self._not_for_me_streak = 0
                                 guard.turn_over()
-                        elif event["type"] == "turn_complete":
-                            self._quiet_turn = False
-                            self._set_state(State.THINKING)
-                            log.flush(fragments)
-                        elif event["type"] == "go_away":
-                            fragments.append(("note", "Gemini's session time limit reached; conversation closed"))
-                            return   # ends the conversation cleanly; "hey tron" starts a fresh one
+                                if spoke_ns[0]:
+                                    latency.record("response", spoke_ns[0])
+                                    spoke_ns[0] = 0
+                                self._set_state(State.SPEAKING)
+                                # Off the loop: write() blocks until the device
+                                # buffer has room, which starved send_loop.
+                                await asyncio.to_thread(self._audio.play_chunk, event["data"])
+                                last_audio[0] = time.monotonic()
+                                self._on_audio_level(rms_level(event["data"]))
+                                touch()
+                            elif event["type"] == "tool_call":
+                                self._set_state(State.ACTING)
+                                for call in event["calls"]:
+                                    refused = guard.check(call["name"], call["args"])
+                                    began = latency.now_ns()
+                                    result = refused or await self._run_tool(call, session)
+                                    latency.record("tool", began, detail=call["name"])
+                                    fragments.append(("tool", convo_log.tool_line(
+                                        call["name"], call["args"], ("REFUSED BY SAFETY CHECK: " if refused else "") + result)))
+                                    memory.log_activity({
+                                        "tool": call["name"], "args": call["args"], "result": result
+                                    })
+                                    await session.send_tool_response(call["id"], call["name"], result)
+                                touch()
+                            elif event["type"] == "transcript":
+                                # Fragments, not utterances — joined into turns when
+                                # the conversation ends. See memory.join_transcript.
+                                fragments.append((event["role"], event["text"]))
+                                if event["role"] == "user":
+                                    guard.user_said(event["text"])
+                                    last_user_words[0] = time.monotonic()
+                                    touch()
+                                else:
+                                    guard.turn_over()
+                            elif event["type"] == "turn_complete":
+                                self._quiet_turn = False
+                                self._set_state(State.THINKING)
+                                log.flush(fragments)
+                            elif event["type"] == "resume_handle":
+                                self._resume_handle = event["handle"]
+                            elif event["type"] == "go_away":
+                                if self._resume_handle:
+                                    self._resuming = True   # reconnect and carry on (see the loop above)
+                                else:
+                                    fragments.append(("note", "Gemini's session time limit reached; conversation closed"))
+                                return
 
-                recv_task = asyncio.create_task(recv_loop())
-                try:
-                    await send_loop()
-                finally:
-                    recv_task.cancel()
-                # A receiver that died with an error ends the conversation as
-                # one — previously its exception was never even retrieved.
-                if recv_task.done() and not recv_task.cancelled():
-                    recv_task.result()
+                    recv_task = asyncio.create_task(recv_loop())
+                    try:
+                        await send_loop()
+                    finally:
+                        recv_task.cancel()
+                    # A receiver that died with an error ends the conversation as
+                    # one — previously its exception was never even retrieved.
+                    if recv_task.done() and not recv_task.cancelled():
+                        try:
+                            recv_task.result()
+                        except Exception as exc:
+                            if attempt == 2 or not (self._resume_handle and _connection_dropped(exc)):
+                                raise
+                            fragments.append(("note", f"connection dropped ({exc}); resumed the same conversation"))
+                            continue
+                if self._resuming and attempt < 2:
+                    self._resuming = False
+                    fragments.append(("note", "Gemini asked to reconnect; resumed the same conversation"))
+                    continue
+                break
         except Exception as exc:
             ended_in_error = True
             _log_conversation_error()

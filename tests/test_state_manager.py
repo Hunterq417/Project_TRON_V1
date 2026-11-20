@@ -534,7 +534,7 @@ def test_empty_memory_blocks_leave_no_gaps_in_the_prompt(monkeypatch):
         silence_timeout_s=1.0, audio=FakeAudio(),
     )
 
-    assert machine._system_prompt() == "be TRON\n\n" + sm.brain.HOUSE_RULES
+    assert machine._system_prompt() == "be TRON\n\n" + sm.brain.COMMAND_MATRIX + "\n\n" + sm.brain.HOUSE_RULES
 
 
 def test_greet_puts_its_instruction_in_the_prompt_then_drops_it():
@@ -567,3 +567,41 @@ def test_greet_starts_a_conversation():
 
     assert prompts and "say good morning" in prompts[0]
     assert machine.state is sm.State.IDLE
+
+
+class DroppingSession(FakeSession):
+    """Hands over a resumption handle, then the connection drops (1006), like the log of 2026-11-18."""
+
+    async def receive(self):
+        yield {"type": "resume_handle", "handle": "h-123"}
+        yield {"type": "audio", "data": b"first-half"}
+        raise ConnectionError("1006 None. abnormal closure [internal]")
+
+
+class ResumableSession(FakeSession):
+    def __init__(self):
+        super().__init__([{"type": "audio", "data": b"second-half"}, {"type": "turn_complete"}])
+        self.resumed_with = None
+
+    def resume_with(self, handle):
+        self.resumed_with = handle
+
+
+def test_a_dropped_connection_rejoins_the_same_conversation():
+    audio = FakeAudio()
+    sessions = [DroppingSession(), ResumableSession()]
+    machine = sm.TronStateMachine(api_key="k", model_name="m", voice_name="v", persona_text="p",
+                                  silence_timeout_s=0.3, audio=audio, session_factory=lambda: sessions.pop(0))
+    machine.trigger()
+    assert machine.state is sm.State.IDLE                      # not ERROR: the drop was survived
+    assert audio.played == [b"first-half", b"second-half"]     # and the conversation carried on
+    assert sessions == []
+
+
+def test_resumed_connection_gets_the_handle(monkeypatch):
+    second = ResumableSession()
+    sessions = [DroppingSession(), second]
+    machine = sm.TronStateMachine(api_key="k", model_name="m", voice_name="v", persona_text="p",
+                                  silence_timeout_s=0.3, audio=FakeAudio(), session_factory=lambda: sessions.pop(0))
+    machine.trigger()
+    assert second.resumed_with == "h-123"

@@ -5,6 +5,9 @@ from google import genai
 from google.genai import types
 
 
+SILENCE_MS = 600   # quiet needed before the user's turn counts as finished
+
+
 class GeminiLiveSession:
     """One Gemini Live conversation: PCM audio in, tagged events (audio/tool_call/turn_complete) out."""
 
@@ -45,9 +48,26 @@ class GeminiLiveSession:
             # it: the model's reply comes back as text as well as audio.
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
+            # Each verified against gemini-3.1-flash-live-preview on 2026-11-18 (affective dialog is rejected
+            # by that model, so it isn't asked for):
+            # - a dropped connection can rejoin the same conversation (resume_with) instead of ending it;
+            session_resumption=types.SessionResumptionConfig(),
+            # - old turns are compressed instead of the session ending at ~15 minutes;
+            context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
+            # - a pause mid-sentence doesn't end the user's turn ("15 minute re..." was cut off);
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(
+                    end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                    silence_duration_ms=SILENCE_MS)),
+            # - the model itself may stay silent for speech that isn't meant for it.
+            proactivity=types.ProactivityConfig(proactive_audio=True),
         )
         self._connect_cm = None
         self._session = None
+
+    def resume_with(self, handle: str) -> None:
+        """Rejoin an earlier connection's conversation (same context) instead of starting a new one."""
+        self._config.session_resumption = types.SessionResumptionConfig(handle=handle)
 
     async def __aenter__(self) -> "GeminiLiveSession":
         self._connect_cm = self._client.aio.live.connect(model=self._model_name, config=self._config)
@@ -107,6 +127,9 @@ class GeminiLiveSession:
             ]
             yield {"type": "tool_call", "calls": calls}
 
+        update = getattr(response, "session_resumption_update", None)
+        if update is not None and update.resumable is True and isinstance(update.new_handle, str):
+            yield {"type": "resume_handle", "handle": update.new_handle}
         if getattr(response, "go_away", None) is not None:
             # The session is about to hit its time limit. The client has to close it; one that doesn't is
             # cut off as a "policy violation" (seen 2026-10-07 after a long conversation).

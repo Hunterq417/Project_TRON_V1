@@ -1,5 +1,6 @@
 # wake_trigger.py
 import threading
+import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -46,6 +47,9 @@ def persona_wake_models() -> dict:
     return {str(jarvis): "jarvis", str(config.app_dir() / "models" / "hey_friday.onnx"): "friday"}
 
 
+_DEAF_AFTER = 5.0   # seconds with no audio blocks before the stream is reopened
+
+
 class OpenWakeWordTrigger:
     """Continuously listens on its own mic stream for a trained "hey tron" wake-word
     model (see docs/train_wakeword.md) and calls on_trigger() past a confidence
@@ -89,7 +93,9 @@ class OpenWakeWordTrigger:
         threading.Thread(target=self._follow_windows, daemon=True).start()
 
     def _open(self) -> None:
+        import time
         self._mic = audio_io.resolve_input(self._device)
+        self._heard_at = time.monotonic()
         self._stream = sd.InputStream(
             samplerate=_WAKE_SAMPLE_RATE, channels=1, dtype="int16",
             blocksize=_WAKE_BLOCK_SIZE, callback=self._on_block, device=self._mic,
@@ -98,18 +104,24 @@ class OpenWakeWordTrigger:
 
     def _follow_windows(self) -> None:
         """Earbuds connected (or a headset unplugged) after TRON started: Windows switches its default mic,
-        and "hey tron" has to be heard on the new one. Checks every few seconds; reopens only on a change."""
+        and "hey tron" has to be heard on the new one. Checks every few seconds; reopens on a change, and also
+        when no audio has arrived for a while: a reopen that failed mid-switch used to leave TRON deaf to the wake
+        word (still showing Ready) until it was restarted."""
         import time
         while self._stream is not None:
             time.sleep(3)
             try:
                 mic = audio_io.resolve_input(self._device)
-                if mic != self._mic and self._stream is not None:
-                    self._stream.stop()
-                    self._stream.close()
+                silent = time.monotonic() - self._heard_at > _DEAF_AFTER
+                if (mic != self._mic or silent) and self._stream is not None:
+                    try:
+                        self._stream.stop()
+                        self._stream.close()
+                    except Exception:
+                        pass   # already dead: that's why we're here
                     self._open()
             except Exception:
-                pass     # a device mid-switch: try again on the next check
+                self._mic = None   # make the next check try again instead of believing the new mic is open
 
     def stop(self) -> None:
         if self._stream is not None:
@@ -124,6 +136,7 @@ class OpenWakeWordTrigger:
         self._listening = True
 
     def _on_block(self, indata, frames, time_info, status) -> None:
+        self._heard_at = time.monotonic()   # the stream is alive, even while paused for a conversation
         if not self._listening:
             return
         chunk = np.frombuffer(bytes(indata), dtype=np.int16)

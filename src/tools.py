@@ -18,6 +18,7 @@ import google_services
 import objects
 import routine
 import scheduler
+import site_search
 import skills
 import timers
 import video_clip
@@ -351,6 +352,7 @@ TOOL_DISPATCH = {
     "current_time": _current_time,
     "use_skill": skills.use_skill,
     "switch_assistant": _switch_assistant,
+    "search_site": site_search.search_site,
     "show_hidden_icons": computer.show_hidden_icons,
     "identify_object": objects.identify_object,
     "schedule_task": scheduler.schedule_task,
@@ -970,7 +972,7 @@ TOOL_DECLARATIONS += [
     },
 ]
 
-TOOL_DECLARATIONS += computer.DECLARATIONS + [skills.DECLARATION] + routine.DECLARATIONS + scheduler.DECLARATIONS + [{
+TOOL_DECLARATIONS += computer.DECLARATIONS + [skills.DECLARATION] + routine.DECLARATIONS + scheduler.DECLARATIONS + [site_search.DECLARATION, {
     "name": "not_for_me",
     "description": "Call INSTEAD of answering when what you just heard wasn't said to you: the user talking to "
                    "another person or on the phone, someone else in the room, a video or song playing, "

@@ -57,7 +57,7 @@ TOOLS = {m.name: m for m in (
     _t("restart_pc", "power", "SYSTEM_CONTROL", "high", reversible=False, confirm=True),
     _t("cancel_shutdown", "power", "SYSTEM_CONTROL"),
     # web
-    _t("web_search", "web", "SEARCH"), _t("open_website", "web", "UPDATE"), _t("new_tab", "web", "UPDATE"),
+    _t("web_search", "web", "SEARCH"), _t("search_site", "web", "SEARCH"), _t("open_website", "web", "UPDATE"), _t("new_tab", "web", "UPDATE"),
     # files
     _t("find_file", "files", "SEARCH", side_effect=False),
     # email: a draft stays on the PC; sending is the external effect

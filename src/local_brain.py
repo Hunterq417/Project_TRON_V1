@@ -270,7 +270,7 @@ class LocalBrain:
                 remembered = ""   # memory unavailable: carry on with the conversation alone
         import voices
         parts = [self.persona or "You are TRON, a voice assistant that controls the user's Windows PC. Address the user as sir.",
-                 RESPONSE_RULES, INTERPRETATION_RULES, brain.HOUSE_RULES, skills.context(), remembered,
+                 RESPONSE_RULES, INTERPRETATION_RULES, brain.COMMAND_MATRIX, brain.HOUSE_RULES, skills.context(), remembered,
                  voices.context(),
                  f"The current date and time is {now}. Never guess the time; use this.",
                  f"You run entirely on this PC: your brain is the {self.model} model in Ollama, you hear with "

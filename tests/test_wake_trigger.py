@@ -256,3 +256,27 @@ def test_hey_jarvis_wakes_tron_as_jarvis(tmp_path, monkeypatch):
     trigger._fire("hey_jarvis_v0.1")
     trigger._fire("tron")                     # "hey tron" wakes whoever is active, no switch
     assert order == ["jarvis", "wake", "wake"]
+
+
+def test_a_failed_reopen_is_retried_and_a_silent_stream_is_reopened(tmp_path, monkeypatch):
+    """Earbuds disconnected mid-switch: the reopen failed once and TRON stayed deaf to the wake word, showing
+    Ready. Now the next check tries again, and a stream that delivers no audio is reopened."""
+    model_path = tmp_path / "tron.onnx"
+    model_path.write_bytes(b"fake")
+    monkeypatch.setattr(wake_trigger.openwakeword, "Model", MagicMock())
+    fake_sd = MagicMock()
+    monkeypatch.setattr(wake_trigger, "sd", fake_sd)
+    monkeypatch.setattr(wake_trigger.audio_io, "resolve_input", lambda d: 9)
+    trigger = wake_trigger.OpenWakeWordTrigger(str(model_path), on_trigger=MagicMock())
+    trigger._open()
+    opened = fake_sd.InputStream.call_count
+    ticks = iter(range(3))
+
+    def fake_sleep(_s):
+        if next(ticks, None) is None:
+            trigger._stream = None          # end the loop
+    monkeypatch.setattr("time.sleep", fake_sleep)
+    trigger._heard_at -= 60                 # no audio for a minute: the stream is dead
+    fake_sd.InputStream.side_effect = [RuntimeError("device busy"), MagicMock(), MagicMock()]
+    trigger._follow_windows()
+    assert fake_sd.InputStream.call_count >= opened + 2   # failed once, retried, reopened

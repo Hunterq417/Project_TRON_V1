@@ -207,3 +207,10 @@ def test_a_promise_without_a_tool_call_is_sent_back_to_be_done():
                     lambda n, a: ran.append(n) or ("volume is at 90 percent, sir" if n == "volume_status" else "turned it down, sir"))
     assert ran == ["volume_status", "change_volume"] and reply == "turned it down, sir"
     assert ollama.sent[2]["messages"][-1]["content"] == local_brain.ACT_NOTE
+
+
+def test_every_tool_the_command_matrix_names_exists():
+    import re
+    named = set(re.findall(r"\b([a-z]+_[a-z_]+)\b", brain.COMMAND_MATRIX)) - {"media_"}
+    known = set(tools.TOOL_DISPATCH) | tools.CONTROL_TOOL_NAMES | tools.PERMISSION_GATED
+    assert {n for n in named if not n.startswith("media_")} <= known
